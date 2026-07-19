@@ -1,0 +1,7 @@
+add_executable(model_workqueue model_workqueue.c)
+emq_apply_warnings(model_workqueue)
+if(WIN32)
+  target_compile_definitions(model_workqueue PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+add_test(NAME model_workqueue COMMAND model_workqueue)
+set_tests_properties(model_workqueue PROPERTIES LABELS "model" TIMEOUT 30)

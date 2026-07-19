@@ -1,0 +1,88 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"          # daily 03:00 UTC
+    - cron: "0 4 * * 0"          # weekly Sunday 04:00 UTC (longer)
+  workflow_dispatch:
+    inputs:
+      scale:
+        description: "ops scale multiplier"
+        required: false
+        default: "1"
+
+jobs:
+  long-stress:
+    name: Long stress / fuzz / recovery / soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON \
+            -DEMQ_BUILD_BENCH=ON -DEMQ_BUILD_EXAMPLES=OFF
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Decide scale
+        id: scale
+        run: |
+          # Weekly cron (Sunday) uses 10x; daily uses 1x; dispatch uses input.
+          DAY=$(date -u +%u)
+          SCALE="${{ github.event.inputs.scale }}"
+          if [ -z "$SCALE" ]; then
+            if [ "$DAY" = "7" ]; then SCALE=10; else SCALE=1; fi
+          fi
+          echo "scale=$SCALE" >> "$GITHUB_OUTPUT"
+          echo "Using scale=$SCALE"
+
+      - name: stress_spsc
+        run: |
+          OPS=$((200000000 * ${{ steps.scale.outputs.scale }}))
+          ./build/stress/stress_spsc --ops "$OPS" --payload 64
+
+      - name: stress_mpmc
+        run: |
+          OPS=$((20000000 * ${{ steps.scale.outputs.scale }}))
+          ./build/stress/stress_mpmc --ops "$OPS" --queues 100 --threads 16
+
+      - name: fuzz_ops
+        run: |
+          OPS=$((5000000 * ${{ steps.scale.outputs.scale }}))
+          ./build/fuzz/fuzz_ops --ops "$OPS"
+
+      - name: diff_runner
+        run: |
+          OPS=$((5000000 / ${{ steps.scale.outputs.scale }}))
+          if [ "$OPS" -lt 100000 ]; then OPS=100000; fi
+          # Full scale on weekly already expensive across policies; cap daily.
+          if [ "${{ steps.scale.outputs.scale }}" = "1" ]; then OPS=500000; else OPS=5000000; fi
+          ./build/difftest/diff_runner --ops "$OPS"
+
+      - name: recovery cycles
+        run: |
+          CYCLES=$((500 * ${{ steps.scale.outputs.scale }}))
+          ./build/recovery/recovery_supervisor --cycles "$CYCLES"
+
+      - name: recovery crashpoint matrix
+        run: ./build/recovery/recovery_supervisor --crashpoint
+
+      - name: soak 1h
+        run: |
+          DUR=$((3600))
+          if [ "${{ steps.scale.outputs.scale }}" != "1" ]; then DUR=$((3600 * 2)); fi
+          ./build/soak/soak_runner --duration "$DUR" --csv soak.csv --queues 8
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-artifacts
+          path: |
+            soak.csv
+          if-no-files-found: ignore

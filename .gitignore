@@ -1,0 +1,106 @@
+# Build trees
+build/
+build_*/
+build-*/
+cmake-build-*/
+out/
+install/
+
+# CMake / CTest generated
+CMakeCache.txt
+compile_commands.json
+Testing/
+CTestTestfile.cmake
+cmake_install.cmake
+
+# Prerequisites / objects
+*.d
+*.o
+*.ko
+*.obj
+*.elf
+*.gch
+*.pch
+*.suf
+*.dwo
+
+# Libraries / shared objects (build outputs)
+*.a
+*.lib
+*.la
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Executables / linker
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+*.ilk
+*.map
+*.exp
+
+# Debug
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.ipdb
+*.iobj
+
+# Kernel module leftovers
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+.cache/
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local Cursor / agent state
+.cursor/
+
+# Runtime / test scratch
+*.seg
+*.log
+!tests/fixtures/**/*.seg
+!tests/fixtures/**/*.meta
+!tests/fixtures/**/*.dat
+stress_tmp_*/
+recovery_tmp_*/
+recovery_cp_*/
+compat-*/
+fwd-compat-*/
+*_tmp/
+baseline.csv
+soak.csv
+soak*.csv
+
+# Coverage / sanitizer / fuzz artifacts
+*.gcda
+*.gcno
+*.gcov
+coverage/
+fuzz-*/
+crash-*
+leak-*
+timeout-*

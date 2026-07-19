@@ -1,0 +1,7 @@
+add_executable(emq_producer_consumer producer_consumer.c)
+target_link_libraries(emq_producer_consumer PRIVATE emq)
+emq_apply_warnings(emq_producer_consumer)
+
+add_executable(emq_pubsub_demo pubsub_demo.c)
+target_link_libraries(emq_pubsub_demo PRIVATE emq)
+emq_apply_warnings(emq_pubsub_demo)

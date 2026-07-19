@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            compiler: msvc
+          - os: ubuntu-latest
+            compiler: gcc
+            cc: gcc
+          - os: ubuntu-latest
+            compiler: clang
+            cc: clang
+          - os: macos-latest
+            compiler: appleclang
+            cc: clang
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Windows MSVC)
+        if: matrix.compiler == 'msvc'
+        shell: cmd
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+
+      - name: Configure (Unix)
+        if: matrix.compiler != 'msvc'
+        env:
+          CC: ${{ matrix.cc }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: CTest
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 180
+
+      - name: Bench (report only)
+        shell: bash
+        run: |
+          set +e
+          for c in \
+            ./build/bench/Release/emq_bench_load.exe \
+            ./build/bench/emq_bench_load.exe \
+            ./build/bench/emq_bench_load
+          do
+            if [ -x "$c" ]; then "$c" --quick; exit 0; fi
+          done
+          exit 0
+
+  sanitize-asan:
+    name: Ubuntu Clang ASan+UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DEMQ_SANITIZE=address,undefined
+          -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON
+          -DEMQ_BUILD_BENCH=OFF -DEMQ_BUILD_EXAMPLES=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: CTest
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build --output-on-failure --timeout 300
+
+  sanitize-tsan:
+    name: Ubuntu Clang TSan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_COMPILER=clang
+          -DEMQ_SANITIZE=thread
+          -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON
+          -DEMQ_BUILD_BENCH=OFF -DEMQ_BUILD_EXAMPLES=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: CTest (threaded suites)
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build --output-on-failure --timeout 300 -L "stress|fuzz|difftest|model"

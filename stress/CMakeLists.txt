@@ -1,0 +1,5 @@
+emq_add_suite(stress_spsc stress_spsc.c stress)
+emq_add_suite(stress_mpmc stress_mpmc.c stress)
+emq_add_suite(stress_churn stress_churn.c stress)
+emq_add_suite(stress_compact stress_compact.c stress)
+emq_add_suite(stress_replay stress_replay.c stress)
