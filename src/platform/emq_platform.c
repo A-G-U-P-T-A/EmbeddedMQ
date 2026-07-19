@@ -1,9 +1,4 @@
-#if defined(__linux__)
-#  define _GNU_SOURCE
-#elif defined(__APPLE__)
-#  define _DARWIN_C_SOURCE
-#endif
-
+/* Feature macros come from CMake (-D_GNU_SOURCE / -D_DARWIN_C_SOURCE). */
 #include "platform/emq_platform.h"
 #include "core/emq_fault.h"
 #include "core/emq_mem.h"

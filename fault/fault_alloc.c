@@ -2,6 +2,7 @@
 #include "emq_testsupport.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef EMQ_FAULT_INJECT

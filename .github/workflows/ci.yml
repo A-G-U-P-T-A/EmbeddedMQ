@@ -8,31 +8,44 @@ on:
 
 jobs:
   build-test:
-    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - name: windows / msvc
+            os: windows-2022
             compiler: msvc
-          - os: ubuntu-latest
+          - name: ubuntu / gcc
+            os: ubuntu-latest
             compiler: gcc
             cc: gcc
-          - os: ubuntu-latest
+          - name: ubuntu / clang
+            os: ubuntu-latest
             compiler: clang
             cc: clang
-          - os: macos-latest
+          - name: macos / appleclang
+            os: macos-latest
             compiler: appleclang
             cc: clang
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup MSVC + Ninja
+        if: matrix.compiler == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja (Windows)
+        if: matrix.compiler == 'msvc'
+        shell: bash
+        run: choco install ninja -y
+
       - name: Configure (Windows MSVC)
         if: matrix.compiler == 'msvc'
         shell: cmd
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
 
       - name: Configure (Unix)
         if: matrix.compiler != 'msvc'
@@ -51,8 +64,8 @@ jobs:
         run: |
           set +e
           for c in \
-            ./build/bench/Release/emq_bench_load.exe \
             ./build/bench/emq_bench_load.exe \
+            ./build/bench/Release/emq_bench_load.exe \
             ./build/bench/emq_bench_load
           do
             if [ -x "$c" ]; then "$c" --quick; exit 0; fi
