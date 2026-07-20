@@ -124,3 +124,9 @@ fuzz-*/
 crash-*
 leak-*
 timeout-*
+
+# Loadtest / example build outputs
+examples/**/target/
+examples/loadtest/results.txt
+examples/**/Cargo.lock
+
