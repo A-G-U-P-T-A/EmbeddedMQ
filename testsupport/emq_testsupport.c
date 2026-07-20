@@ -1,5 +1,6 @@
 #include "emq_testsupport.h"
 #include "platform/emq_platform.h"
+#include "core/emq_atomic.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -152,8 +153,8 @@ int emq_payload_check(const uint8_t *buf, size_t len, uint64_t *seq_out,
 
 /* ---- Watchdog ---- */
 struct emq_watchdog {
-  volatile int stop;
-  volatile uint64_t beats;
+  emq_atomic_i32 stop;
+  emq_atomic_u64 beats;
   uint32_t stall_sec;
   char label[64];
   emq_thread *thread;
@@ -163,20 +164,22 @@ static void emq_watchdog_main(void *arg) {
   emq_watchdog *w = (emq_watchdog *)arg;
   uint64_t last = 0;
   uint32_t stalled = 0;
-  while (!w->stop) {
+  while (emq_atomic_load_i32(&w->stop) == 0) {
+    uint64_t beats;
     emq_sleep_ms(1000);
-    if (w->stop) break;
-    if (w->beats == last) {
+    if (emq_atomic_load_i32(&w->stop) != 0) break;
+    beats = emq_atomic_load_u64(&w->beats);
+    if (beats == last) {
       stalled++;
       if (stalled >= w->stall_sec) {
         fprintf(stderr,
                 "WATCHDOG: stalled %u s label=%s beats=%llu — aborting\n",
-                stalled, w->label, (unsigned long long)w->beats);
+                stalled, w->label, (unsigned long long)beats);
         fflush(stderr);
         abort();
       }
     } else {
-      last = w->beats;
+      last = beats;
       stalled = 0;
     }
   }
@@ -191,7 +194,8 @@ emq_watchdog *emq_watchdog_start(uint32_t stall_sec, const char *label) {
   } else {
     strcpy(w->label, "unnamed");
   }
-  w->beats = 1;
+  emq_atomic_init_i32(&w->stop, 0);
+  emq_atomic_init_u64(&w->beats, 1);
   if (emq_thread_create(&w->thread, emq_watchdog_main, w) != 0) {
     free(w);
     return NULL;
@@ -200,12 +204,12 @@ emq_watchdog *emq_watchdog_start(uint32_t stall_sec, const char *label) {
 }
 
 void emq_watchdog_heartbeat(emq_watchdog *w) {
-  if (w) w->beats++;
+  if (w) (void)emq_atomic_fetch_add_u64(&w->beats, 1);
 }
 
 void emq_watchdog_stop(emq_watchdog *w) {
   if (!w) return;
-  w->stop = 1;
+  emq_atomic_store_i32(&w->stop, 1);
   if (w->thread) {
     emq_thread_join(w->thread);
     emq_thread_destroy(w->thread);

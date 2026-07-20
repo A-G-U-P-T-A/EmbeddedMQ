@@ -14,8 +14,8 @@ extern "C" {
 
 typedef struct emq_hist {
   emq_atomic_u64 buckets[EMQ_HIST_BUCKETS];
-  uint64_t total_count;
-  uint64_t total_ns;
+  emq_atomic_u64 total_count;
+  emq_atomic_u64 total_ns;
 } emq_hist;
 
 void emq_hist_init(emq_hist *h);

@@ -7,6 +7,11 @@
 option(EMQ_ASAN "Enable MSVC AddressSanitizer" OFF)
 set(EMQ_SANITIZE "" CACHE STRING "Clang/GCC sanitizers (address;undefined;thread)")
 
+# Let tests skip RSS gates that sanitizer shadow memory would trip.
+if(EMQ_SANITIZE OR EMQ_ENABLE_SANITIZERS OR EMQ_ASAN)
+  add_compile_definitions(EMQ_SANITIZER_BUILD=1)
+endif()
+
 function(emq_apply_sanitizers target)
   if(MSVC)
     if(EMQ_ASAN)
@@ -24,8 +29,10 @@ function(emq_apply_sanitizers target)
   endif()
 
   if(_sans)
-    target_compile_options(${target} PRIVATE
+    # PUBLIC so dependents inherit compile + link flags. A static lib alone
+    # being instrumented is not enough — final links need -fsanitize= too.
+    target_compile_options(${target} PUBLIC
       -fsanitize=${_sans} -fno-omit-frame-pointer)
-    target_link_options(${target} PRIVATE -fsanitize=${_sans})
+    target_link_options(${target} PUBLIC -fsanitize=${_sans})
   endif()
 endfunction()

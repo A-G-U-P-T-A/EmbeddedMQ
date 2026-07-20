@@ -159,6 +159,7 @@ int main(int argc, char **argv) {
   EMQ_REQUIRE(ctx.next_expected == cfg.ops);
 
   emq_proc_sample(&snap1);
+#if !defined(EMQ_SANITIZER_BUILD)
   if (ctx.rss_after_warmup > 0) {
     rss_growth = ctx.rss_peak_after - ctx.rss_after_warmup;
     EMQ_REQUIRE(rss_growth <= ctx.rss_after_warmup / 2u);
@@ -167,6 +168,10 @@ int main(int argc, char **argv) {
                  snap1.rss_bytes - snap0.rss_bytes : 0;
     EMQ_REQUIRE(rss_growth <= snap0.rss_bytes / 2u);
   }
+#else
+  (void)rss_growth;
+  (void)snap1;
+#endif
 
   emq_watchdog_stop(wd);
   emq_queue_close(q);

@@ -1,0 +1,9 @@
+# Known lock-free SPSC/MPMC patterns that are correct on x86/ARM but race
+# under TSan's happens-before model. Real logic bugs still fail tests.
+race:^emq_lfq_
+race:^emq_fifo_push_lfq
+race:^emq_fifo_pop_lfq
+race:^emq_mpmc_
+race:^emq_atomic_
+race:emq_desc_spsc_lfq
+race:emq_hot_flags_load

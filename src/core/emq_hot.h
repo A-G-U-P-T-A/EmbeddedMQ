@@ -4,6 +4,9 @@
 #include "core/emq_atomic.h"
 
 #include <stdint.h>
+#if !defined(_MSC_VER)
+#  include <stdatomic.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +31,17 @@ enum {
   EMQ_HOT_FLAG_SPSC = 4u,
   EMQ_HOT_FLAG_CLOSED = 8u
 };
+
+/* Concurrent readers must use this — producers OR ACTIVE via atomics. */
+static inline uint16_t emq_hot_flags_load(const emq_hot_slot *hot) {
+  if (!hot) return 0;
+#if defined(_MSC_VER)
+  return *(volatile const uint16_t *)&hot->flags;
+#else
+  return atomic_load_explicit((_Atomic uint16_t *)(void *)&hot->flags,
+                              memory_order_relaxed);
+#endif
+}
 
 #ifdef __cplusplus
 }

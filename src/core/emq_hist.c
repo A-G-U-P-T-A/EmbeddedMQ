@@ -33,8 +33,8 @@ void emq_hist_init(emq_hist *h) {
   for (i = 0; i < EMQ_HIST_BUCKETS; ++i) {
     emq_atomic_init_u64(&h->buckets[i], 0);
   }
-  h->total_count = 0;
-  h->total_ns = 0;
+  emq_atomic_init_u64(&h->total_count, 0);
+  emq_atomic_init_u64(&h->total_ns, 0);
 }
 
 void emq_hist_reset(emq_hist *h) {
@@ -45,8 +45,8 @@ void emq_hist_reset(emq_hist *h) {
   for (i = 0; i < EMQ_HIST_BUCKETS; ++i) {
     emq_atomic_store_u64(&h->buckets[i], 0);
   }
-  h->total_count = 0;
-  h->total_ns = 0;
+  emq_atomic_store_u64(&h->total_count, 0);
+  emq_atomic_store_u64(&h->total_ns, 0);
 }
 
 void emq_hist_record(emq_hist *h, uint64_t value_ns) {
@@ -56,8 +56,8 @@ void emq_hist_record(emq_hist *h, uint64_t value_ns) {
   }
   bucket = emq_hist_bucket(value_ns);
   (void)emq_atomic_fetch_add_u64(&h->buckets[bucket], 1);
-  h->total_count++;
-  h->total_ns += value_ns;
+  (void)emq_atomic_fetch_add_u64(&h->total_count, 1);
+  (void)emq_atomic_fetch_add_u64(&h->total_ns, value_ns);
 }
 
 void emq_hist_merge(emq_hist *dst, const emq_hist *src) {
@@ -71,16 +71,23 @@ void emq_hist_merge(emq_hist *dst, const emq_hist *src) {
       (void)emq_atomic_fetch_add_u64(&dst->buckets[i], n);
     }
   }
-  dst->total_count += src->total_count;
-  dst->total_ns += src->total_ns;
+  (void)emq_atomic_fetch_add_u64(&dst->total_count,
+                                 emq_atomic_load_u64(&src->total_count));
+  (void)emq_atomic_fetch_add_u64(&dst->total_ns,
+                                 emq_atomic_load_u64(&src->total_ns));
 }
 
 uint64_t emq_hist_percentile(const emq_hist *h, double percentile) {
   uint64_t target;
   uint64_t seen = 0;
+  uint64_t total;
   size_t i;
 
-  if (!h || h->total_count == 0) {
+  if (!h) {
+    return 0;
+  }
+  total = emq_atomic_load_u64(&h->total_count);
+  if (total == 0) {
     return 0;
   }
   if (percentile <= 0.0) {
@@ -90,7 +97,7 @@ uint64_t emq_hist_percentile(const emq_hist *h, double percentile) {
     return (uint64_t)1ULL << (EMQ_HIST_BUCKETS - 1u);
   }
 
-  target = (uint64_t)((double)h->total_count * percentile / 100.0);
+  target = (uint64_t)((double)total * percentile / 100.0);
   if (target == 0) {
     target = 1;
   }

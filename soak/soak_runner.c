@@ -92,11 +92,16 @@ int main(int argc, char **argv) {
       if (!warmed) {
         baseline_rss = snap.rss_bytes ? snap.rss_bytes : baseline_rss;
         warmed = 1;
-      } else if (cli.quick && snap.rss_bytes > baseline_rss * 2) {
+      } else if (cli.quick && snap.rss_bytes > 0 && baseline_rss > 0 &&
+                 snap.rss_bytes > baseline_rss * 2) {
+#if defined(EMQ_SANITIZER_BUILD)
+        /* Sanitizer shadow memory dominates RSS; skip the 2x gate. */
+#else
         fprintf(stderr, "RSS growth exceeded 2x baseline: %llu > 2 * %llu\n",
                 (unsigned long long)snap.rss_bytes,
                 (unsigned long long)baseline_rss);
         EMQ_REQUIRE(0);
+#endif
       }
       next_sample_ns = emq_now_ns() + 500000000ULL;
     }

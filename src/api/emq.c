@@ -3,6 +3,7 @@
 #include "primitives/emq_primitives.h"
 #include "platform/emq_platform.h"
 #include "core/emq_atomic.h"
+#include "core/emq_hot.h"
 #include "core/emq_pool.h"
 #include "core/emq_task.h"
 #include "core/emq_hist.h"
@@ -11,7 +12,8 @@
 #include <string.h>
 
 static int emq_desc_spsc_lfq(const emq_queue_desc *d) {
-  return d && d->lfq && (d->hot.flags & EMQ_HOT_FLAG_SPSC);
+  return d && d->lfq &&
+         (emq_hot_flags_load(&d->hot) & EMQ_HOT_FLAG_SPSC) != 0;
 }
 
 struct emq_runtime {
@@ -250,7 +252,8 @@ emq_status emq_pop(emq_queue *q, emq_message *out, uint32_t timeout_ms) {
       /* Futex protocol: snapshot the sequence BEFORE the pop attempt so a
        * push racing in between makes the wait return immediately instead
        * of sleeping through the timeout. */
-      uint64_t expect = q->desc->seq_wait;
+      uint64_t expect =
+          emq_atomic_load_u64((emq_atomic_u64 *)&q->desc->seq_wait);
       rc = emq_prim_pop(q->desc, out, 0, q->rt->engine.wheel);
       if (rc != -5) return emq_map_rc(rc);
       if (timeout_ms == 0) return EMQ_ERR_EMPTY;

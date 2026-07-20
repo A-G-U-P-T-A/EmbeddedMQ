@@ -18,12 +18,12 @@ int main(void) {
   emq_hist_merge(&merged, &a);
   emq_hist_merge(&merged, &b);
 
-  EMQ_CHECK_EQ(merged.total_count, 6u);
-  EMQ_CHECK(merged.total_ns > 0);
+  EMQ_CHECK_EQ(emq_atomic_load_u64(&merged.total_count), 6u);
+  EMQ_CHECK(emq_atomic_load_u64(&merged.total_ns) > 0);
   EMQ_CHECK(emq_hist_percentile(&merged, 50.0) > 0);
 
   emq_hist_reset(&a);
-  EMQ_CHECK_EQ(a.total_count, 0u);
+  EMQ_CHECK_EQ(emq_atomic_load_u64(&a.total_count), 0u);
 
   return emq_test_report();
 }
