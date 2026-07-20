@@ -61,8 +61,10 @@ cmake_install.cmake
 *.ipdb
 *.iobj
 
-# Kernel module leftovers
-*.mod*
+# Kernel module leftovers (keep Go modules: go.mod / go.sum)
+*.mod.c
+*.mod.o
+*.ko
 *.cmd
 .tmp_versions/
 modules.order
