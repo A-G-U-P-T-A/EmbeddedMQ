@@ -21,7 +21,7 @@ jobs:
 
       - name: Configure
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+          cmake -S core -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang \
             -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON \
             -DEMQ_BUILD_BENCH=ON -DEMQ_BUILD_EXAMPLES=OFF

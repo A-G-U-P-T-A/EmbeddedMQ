@@ -1,0 +1,38 @@
+{
+  "name": "backpressure",
+  "description": "Bounded queue with drop-new backpressure when full.",
+  "queue": {
+    "name": "bounded",
+    "opts": {
+      "storage": "fast",
+      "policy": "fifo",
+      "capacity": 2,
+      "backpressure": "drop_new",
+      "producers": 1,
+      "consumers": 1
+    }
+  },
+  "ops": [
+    { "op": "runtime_create" },
+    { "op": "queue_create" },
+    { "op": "push", "payload": "a", "size": 1, "expect_status": "ok" },
+    { "op": "push", "payload": "b", "size": 1, "expect_status": "ok" },
+    { "op": "push", "payload": "c", "size": 1, "expect_status": "full" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "a" },
+    { "op": "push", "payload": "c", "size": 1, "expect_status": "ok" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "b" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "c" },
+    { "op": "queue_close" },
+    { "op": "runtime_destroy" }
+  ],
+  "expected_stats": {
+    "enqueued": 3,
+    "dequeued": 3,
+    "acked": 0,
+    "nacked": 0,
+    "expired": 0,
+    "depth": 0,
+    "bytes": 0,
+    "redelivered": 0
+  }
+}

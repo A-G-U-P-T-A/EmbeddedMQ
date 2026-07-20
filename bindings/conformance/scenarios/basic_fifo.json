@@ -1,0 +1,35 @@
+{
+  "name": "basic_fifo",
+  "description": "Single-producer single-consumer FIFO push/pop cycle.",
+  "queue": {
+    "name": "fifo",
+    "opts": {
+      "storage": "fast",
+      "policy": "fifo",
+      "capacity": 16,
+      "producers": 1,
+      "consumers": 1
+    }
+  },
+  "ops": [
+    { "op": "runtime_create" },
+    { "op": "queue_create" },
+    { "op": "push", "payload": "hello", "size": 5 },
+    { "op": "push", "payload": "world", "size": 5 },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "hello" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "world" },
+    { "op": "try_pop", "expect_status": "empty" },
+    { "op": "queue_close" },
+    { "op": "runtime_destroy" }
+  ],
+  "expected_stats": {
+    "enqueued": 2,
+    "dequeued": 2,
+    "acked": 0,
+    "nacked": 0,
+    "expired": 0,
+    "depth": 0,
+    "bytes": 0,
+    "redelivered": 0
+  }
+}

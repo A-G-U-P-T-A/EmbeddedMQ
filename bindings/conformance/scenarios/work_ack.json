@@ -1,0 +1,40 @@
+{
+  "name": "work_ack",
+  "description": "Work-queue policy with explicit ack after pop.",
+  "queue": {
+    "name": "work",
+    "opts": {
+      "storage": "fast",
+      "policy": "work",
+      "delivery": "at_least_once",
+      "capacity": 8,
+      "visibility_ms": 1000,
+      "producers": 1,
+      "consumers": 1
+    }
+  },
+  "ops": [
+    { "op": "runtime_create" },
+    { "op": "queue_create" },
+    { "op": "push", "payload": "job-1", "size": 5 },
+    { "op": "push", "payload": "job-2", "size": 5 },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "capture_id": "msg1" },
+    { "op": "ack", "message_id": "$msg1" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "capture_id": "msg2" },
+    { "op": "nack", "message_id": "$msg2", "delay_ms": 0 },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "job-2" },
+    { "op": "ack", "message_id": "$msg2" },
+    { "op": "queue_close" },
+    { "op": "runtime_destroy" }
+  ],
+  "expected_stats": {
+    "enqueued": 2,
+    "dequeued": 3,
+    "acked": 2,
+    "nacked": 1,
+    "expired": 0,
+    "depth": 0,
+    "bytes": 0,
+    "redelivered": 1
+  }
+}

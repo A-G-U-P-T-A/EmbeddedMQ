@@ -82,6 +82,9 @@ Desktop.ini
 # Runtime / test scratch
 *.seg
 *.log
+!core/tests/fixtures/**/*.seg
+!core/tests/fixtures/**/*.meta
+!core/tests/fixtures/**/*.dat
 !tests/fixtures/**/*.seg
 !tests/fixtures/**/*.meta
 !tests/fixtures/**/*.dat
@@ -94,6 +97,13 @@ fwd-compat-*/
 baseline.csv
 soak.csv
 soak*.csv
+
+# Language binding build artifacts
+bindings/rust/target/
+bindings/python/**/build/
+bindings/python/**/*.egg-info/
+bindings/java/target/
+*.whl
 
 # Coverage / sanitizer / fuzz artifacts
 *.gcda

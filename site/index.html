@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EmbeddedMQ — In-process messaging for C</title>
+  <meta name="description" content="EmbeddedMQ is a C11 messaging runtime you link into your process. Queues, pub/sub, and work delivery — no broker, no daemon." />
+  <meta property="og:title" content="EmbeddedMQ" />
+  <meta property="og:description" content="In-process messaging for C. Link the library. Push and pop." />
+  <meta property="og:type" content="website" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="top">
+    <a class="logo" href="#top">EmbeddedMQ</a>
+    <nav>
+      <a href="#why">Why</a>
+      <a href="#use">Use</a>
+      <a href="#stack">Stack</a>
+      <a href="https://github.com/A-G-U-P-T-A/EmbeddedMQ">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="brand">EmbeddedMQ</p>
+        <h1>Messaging that lives inside your process.</h1>
+        <p class="lede">
+          A C11 runtime for queues, pub/sub, and work delivery — no broker, no daemon, no network hop unless you ask for one.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/A-G-U-P-T-A/EmbeddedMQ#build">Get started</a>
+          <a class="btn ghost" href="https://github.com/A-G-U-P-T-A/EmbeddedMQ">View source</a>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <svg class="ring" viewBox="0 0 480 480" role="img">
+          <defs>
+            <linearGradient id="wire" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#1f6f5b" />
+              <stop offset="100%" stop-color="#c47a2c" />
+            </linearGradient>
+          </defs>
+          <circle class="track" cx="240" cy="240" r="160" />
+          <circle class="track thin" cx="240" cy="240" r="110" />
+          <g class="packets">
+            <circle class="pkt p1" cx="240" cy="80" r="7" />
+            <circle class="pkt p2" cx="400" cy="240" r="7" />
+            <circle class="pkt p3" cx="240" cy="400" r="7" />
+            <circle class="pkt p4" cx="80" cy="240" r="7" />
+          </g>
+          <path class="arc" d="M240 80 A160 160 0 0 1 400 240" stroke="url(#wire)" />
+        </svg>
+      </div>
+    </section>
+
+    <section id="why" class="panel">
+      <h2>What it is</h2>
+      <p class="section-lede">
+        Link <code>libemq</code>. Create a runtime. Push and pop bytes between threads — with optional durability, backpressure, and ack/nack work queues.
+      </p>
+      <ul class="facts">
+        <li>
+          <strong>In-process first</strong>
+          <span>SPSC/MPMC lock-free FAST rings when you stay in one address space.</span>
+        </li>
+        <li>
+          <strong>Policies, not frameworks</strong>
+          <span>FIFO, LIFO, priority, work, ring, delay, pub/sub — pick per queue.</span>
+        </li>
+        <li>
+          <strong>Same ABI, many languages</strong>
+          <span>C core with Rust, Python, Go, and Java bindings in the monorepo.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section id="use" class="panel code-panel">
+      <h2>Use it</h2>
+      <p class="section-lede">A minimal FAST queue. Ownership of <code>message.data</code> transfers on pop — release it.</p>
+      <pre class="code"><code>emq_runtime *rt;
+emq_queue *q;
+emq_queue_opts opts;
+emq_message m;
+
+emq_runtime_create(&amp;rt);
+emq_queue_opts_default(&amp;opts);
+opts.storage = EMQ_STORAGE_FAST;
+opts.producers = 1;
+opts.consumers = 1;
+emq_queue_create(rt, "jobs", &amp;opts, &amp;q);
+
+emq_push(q, "hello", 5, NULL);
+emq_pop(q, &amp;m, 1000);
+emq_message_release(&amp;m);
+
+emq_queue_close(q);
+emq_runtime_destroy(rt);</code></pre>
+      <p class="build-line">
+        <code>cmake -S core -B build &amp;&amp; cmake --build build &amp;&amp; ctest --test-dir build</code>
+      </p>
+    </section>
+
+    <section id="stack" class="panel">
+      <h2>Monorepo stack</h2>
+      <p class="section-lede">Engine, bindings, and transport planes live side by side.</p>
+      <div class="stack-grid">
+        <article>
+          <h3>core/</h3>
+          <p>C11 engine, tests, stress, fuzz, recovery, ABI freeze.</p>
+        </article>
+        <article>
+          <h3>bindings/</h3>
+          <p>Rust, Python, Go, Java clients over the stable C ABI.</p>
+        </article>
+        <article>
+          <h3>transport/</h3>
+          <p>Shared-memory IPC and an Aeron-style network media driver.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel end">
+      <h2>Ship with confidence</h2>
+      <p class="section-lede">
+        CI on Windows, Linux, and macOS — plus ASan, UBSan, and TSan. Crash-point recovery, differential tests, and soak suites in the tree.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/A-G-U-P-T-A/EmbeddedMQ">Open the repository</a>
+        <a class="btn ghost" href="https://github.com/A-G-U-P-T-A/EmbeddedMQ/blob/main/docs/getting-started.md">Read the guide</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>EmbeddedMQ</span>
+    <a href="https://github.com/A-G-U-P-T-A/EmbeddedMQ">GitHub</a>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>

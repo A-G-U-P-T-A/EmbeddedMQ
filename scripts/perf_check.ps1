@@ -7,7 +7,7 @@
 
 param(
   [string]$BuildDir = "build",
-  [string]$Baseline = "bench/baselines/windows-x64.csv",
+  [string]$Baseline = "core/bench/baselines/windows-x64.csv",
   [switch]$Update
 )
 

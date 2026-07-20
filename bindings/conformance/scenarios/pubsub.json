@@ -1,0 +1,30 @@
+{
+  "name": "pubsub",
+  "description": "Topic publish with pattern subscription and sub_next.",
+  "topic": "events.user.created",
+  "subscription": {
+    "pattern": "events.user.*",
+    "group": "workers"
+  },
+  "ops": [
+    { "op": "runtime_create" },
+    { "op": "subscribe" },
+    { "op": "publish", "payload": "alice", "size": 5 },
+    { "op": "publish", "payload": "bob", "size": 3 },
+    { "op": "sub_next", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "alice" },
+    { "op": "sub_next", "timeout_ms": 0, "expect_status": "ok", "expect_payload": "bob" },
+    { "op": "sub_next", "timeout_ms": 0, "expect_status": "empty" },
+    { "op": "unsubscribe" },
+    { "op": "runtime_destroy" }
+  ],
+  "expected_stats": {
+    "enqueued": 2,
+    "dequeued": 2,
+    "acked": 0,
+    "nacked": 0,
+    "expired": 0,
+    "depth": 0,
+    "bytes": 0,
+    "redelivered": 0
+  }
+}

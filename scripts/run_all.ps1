@@ -17,7 +17,7 @@ if (-not (Test-Path $vs)) {
 $fi = if ($FaultInject) { "ON" } else { "OFF" }
 
 if ($Configure -or -not (Test-Path "$BuildDir\CMakeCache.txt")) {
-  $cfg = "cmake -B $BuildDir -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=$fi -DEMQ_BUILD_BENCH=ON"
+  $cfg = "cmake -S core -B $BuildDir -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=$fi -DEMQ_BUILD_BENCH=ON"
   cmd /c "`"$vs`" -arch=x64 -no_logo && $cfg"
   if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 }

@@ -1,0 +1,10 @@
+[package]
+name = "emq"
+version = "0.1.0"
+edition = "2021"
+description = "Safe Rust wrapper for EmbeddedMQ"
+
+[dependencies]
+emq-sys = { path = "../emq-sys" }
+
+[dev-dependencies]

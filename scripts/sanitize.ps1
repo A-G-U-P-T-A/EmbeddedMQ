@@ -22,7 +22,7 @@ function Invoke-Wsl {
 if ($Mode -eq "valgrind") {
   Invoke-Wsl @"
 set -e
-cmake -B build-valgrind -DCMAKE_BUILD_TYPE=Debug -DEMQ_BUILD_STRESS=OFF -DEMQ_BUILD_BENCH=OFF -DEMQ_BUILD_EXAMPLES=OFF
+cmake -S core -B build-valgrind -DCMAKE_BUILD_TYPE=Debug -DEMQ_BUILD_STRESS=OFF -DEMQ_BUILD_BENCH=OFF -DEMQ_BUILD_EXAMPLES=OFF
 cmake --build build-valgrind -j
 cd build-valgrind
 ctest --output-on-failure
@@ -41,14 +41,15 @@ $build = "build-san-$Mode"
 
 Invoke-Wsl @"
 set -e
-cmake -B $build -DCMAKE_BUILD_TYPE=Debug \
+cmake -S core -B $build -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_C_COMPILER=clang \
   -DEMQ_SANITIZE='$sans' \
   -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON \
   -DEMQ_BUILD_BENCH=OFF -DEMQ_BUILD_EXAMPLES=OFF
 cmake --build $build -j
 cd $build
-ctest --output-on-failure -L 'stress|fuzz|fault|recovery|soak' --timeout 180 || true
+export TSAN_OPTIONS="halt_on_error=1:suppressions=$($root -replace '\\','/')/core/cmake/tsan_suppressions.txt"
+ctest --output-on-failure -L 'stress|fuzz|fault|recovery|soak|difftest|model' --timeout 180 || true
 ctest --output-on-failure -E 'stress_|fuzz_|fault_|recovery_|soak_' --timeout 60
 "@
 

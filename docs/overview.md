@@ -104,5 +104,5 @@ The design goal of the FAST path: **producers and consumers touch shared rings w
 ## Next steps
 
 - [Getting started](getting-started.md)
-- [Public API](../include/emq/emq.h)
+- [Public API](../core/include/emq/emq.h)
 - [Repository README](../README.md)

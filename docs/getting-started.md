@@ -3,11 +3,11 @@
 ## 1. Build the library
 
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S core -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Headers live in `include/emq/`. The static library is `build/libemq.a` (Unix) or the MSVC equivalent under `build/`.
+Headers live in `core/include/emq/`. The static library is `build/libemq.a` (Unix) or the MSVC equivalent under `build/`.
 
 ## 2. Minimal queue
 
@@ -132,4 +132,4 @@ for (;;) {
 ## Next
 
 - [What EmbeddedMQ is](overview.md)
-- Full API: [`include/emq/emq.h`](../include/emq/emq.h)
+- Full API: [`core/include/emq/emq.h`](../core/include/emq/emq.h)

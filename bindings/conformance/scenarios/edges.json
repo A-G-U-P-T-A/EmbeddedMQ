@@ -1,0 +1,39 @@
+{
+  "name": "edges",
+  "description": "Edge cases: peek (borrowed), claim/release, zero-byte payload.",
+  "queue": {
+    "name": "edges",
+    "opts": {
+      "storage": "fast",
+      "policy": "fifo",
+      "capacity": 4,
+      "producers": 1,
+      "consumers": 1
+    }
+  },
+  "ops": [
+    { "op": "runtime_create" },
+    { "op": "queue_create" },
+    { "op": "try_pop", "expect_status": "empty" },
+    { "op": "push", "payload": "", "size": 0, "expect_status": "ok" },
+    { "op": "peek", "expect_status": "ok", "expect_size": 0 },
+    { "op": "peek", "expect_status": "ok", "expect_size": 0 },
+    { "op": "claim", "timeout_ms": 0, "expect_status": "ok", "capture_id": "claimed" },
+    { "op": "release_claim", "message_id": "$claimed" },
+    { "op": "pop", "timeout_ms": 0, "expect_status": "ok", "expect_size": 0 },
+    { "op": "push", "payload": "x", "size": 1 },
+    { "op": "flush" },
+    { "op": "queue_close" },
+    { "op": "runtime_destroy" }
+  ],
+  "expected_stats": {
+    "enqueued": 2,
+    "dequeued": 1,
+    "acked": 0,
+    "nacked": 0,
+    "expired": 0,
+    "depth": 0,
+    "bytes": 0,
+    "redelivered": 0
+  }
+}

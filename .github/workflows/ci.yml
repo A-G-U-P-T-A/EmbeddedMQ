@@ -45,13 +45,16 @@ jobs:
       - name: Configure (Windows MSVC)
         if: matrix.compiler == 'msvc'
         shell: cmd
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+        run: cmake -S core -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
 
       - name: Configure (Unix)
         if: matrix.compiler != 'msvc'
         env:
           CC: ${{ matrix.cc }}
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+        run: cmake -S core -B build -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON -DEMQ_BUILD_BENCH=ON
+
+      # Core engine builds use `cmake -S core` so this job stays valid when
+      # optional monorepo targets (transport, bindings) are absent.
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -79,7 +82,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure
         run: >
-          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          cmake -S core -B build -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang
           -DEMQ_SANITIZE=address,undefined
           -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON
@@ -99,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure
         run: >
-          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          cmake -S core -B build -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_C_COMPILER=clang
           -DEMQ_SANITIZE=thread
           -DEMQ_BUILD_STRESS=ON -DEMQ_FAULT_INJECT=ON
@@ -109,5 +112,19 @@ jobs:
       - name: CTest (threaded suites)
         env:
           # Suppress known lock-free ring races; still fail on other TSan hits.
-          TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/cmake/tsan_suppressions.txt
+          TSAN_OPTIONS: halt_on_error=1:suppressions=${{ github.workspace }}/core/cmake/tsan_suppressions.txt
         run: ctest --test-dir build --output-on-failure --timeout 300 -L "stress|fuzz|difftest|model"
+
+  # Optional ARM64 coverage — enable when runners are available.
+  arm64-stub:
+    name: Linux ARM64 (manual / optional)
+    if: false
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure core-only
+        run: cmake -S core -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+      - name: CTest
+        run: ctest --test-dir build --output-on-failure

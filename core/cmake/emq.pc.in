@@ -1,0 +1,9 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: EmbeddedMQ
+Description: In-process messaging runtime
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lemq
+Cflags: -I${includedir}

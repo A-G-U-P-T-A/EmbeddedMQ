@@ -1,6 +1,10 @@
 # EmbeddedMQ
 
 [![CI](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/ci.yml/badge.svg)](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/ci.yml)
+[![Pages](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/pages.yml/badge.svg)](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/pages.yml)
+[![Website](https://img.shields.io/badge/website-a--g--u--p--t--a.github.io%2FEmbeddedMQ-1f6f5b)](https://a-g-u-p-t-a.github.io/EmbeddedMQ/)
+
+**Website:** [a-g-u-p-t-a.github.io/EmbeddedMQ](https://a-g-u-p-t-a.github.io/EmbeddedMQ/)
 
 **In-process messaging for C applications** — queues, pub/sub, and work delivery inside your process. No broker, no daemon, no network hop.
 
@@ -29,22 +33,35 @@ emq_runtime_destroy(rt);
 
 ---
 
+## Repository layout
+
+```
+core/           C11 engine (library, tests, benches, stress)
+bindings/       Language clients (Rust, Python, Go, Java)
+transport/      IPC + network media-driver
+site/           Project website (GitHub Pages)
+docs/           User docs
+scripts/        Local orchestration
+```
+
+---
+
 ## What it is
 
 EmbeddedMQ is a **C11 messaging runtime** you embed in your binary. It replaces “stand up Redis/Rabbit/Kafka for local IPC” when producers and consumers already share an address space.
 
 | You get | You do not get |
 | ------- | -------------- |
-| Lock-free FAST queues (SPSC / MPMC) | Multi-host clustering |
+| Lock-free FAST queues (SPSC / MPMC) | Multi-host clustering (see `transport/`) |
 | Durable / mmap / hybrid storage | Distributed transactions |
-| Pub/sub with wildcards & groups | A network protocol |
-| Work queues (ack / nack / visibility) | SQL or query language |
-| Backpressure, delay, ring, stream policies | Language bindings (C API today) |
-| In-process event loop & stackless tasks | A standalone server process |
+| Pub/sub with wildcards & groups | SQL or query language |
+| Work queues (ack / nack / visibility) | A standalone broker process |
+| Backpressure, delay, ring, stream policies | — |
+| In-process event loop & stackless tasks | — |
 
 **Who it’s for:** games, embedded hosts, simulators, local pipelines, and services that need many queues with low latency inside one process.
 
-Deeper product explanation: [docs/overview.md](docs/overview.md).
+Deeper product explanation: [docs/overview.md](docs/overview.md) · landing page: [site/](site/).
 
 ---
 
@@ -60,8 +77,10 @@ Supported platforms: **Windows**, **Linux**, **macOS**.
 
 ## Build
 
+Prefer building the engine directly (keeps binary paths flat under `build/`):
+
 ```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S core -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
@@ -69,26 +88,30 @@ ctest --test-dir build --output-on-failure
 Windows (VS Developer PowerShell / `msvc-dev-cmd`):
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S core -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Or from the monorepo root wrapper: `cmake -S . -B build` (outputs land under `build/core/`).
 
 ### Useful CMake options
 
 | Option | Default | Purpose |
 | ------ | ------- | ------- |
 | `EMQ_BUILD_TESTS` | ON | Unit / integration tests |
-| `EMQ_BUILD_EXAMPLES` | ON | `examples/` demos |
+| `EMQ_BUILD_EXAMPLES` | ON | `core/examples/` demos |
 | `EMQ_BUILD_BENCH` | ON | Benchmarks |
-| `EMQ_BUILD_STRESS` | OFF | Stress / fuzz / soak suites |
+| `EMQ_BUILD_STRESS` | ON | Stress / fuzz / soak suites |
+| `EMQ_BUILD_SHARED` | OFF | Also build `libemq` shared library |
+| `EMQ_BUILD_TRANSPORT` | OFF | Shared-memory IPC + UDP media driver |
 | `EMQ_FAULT_INJECT` | OFF | Fault-injection builds |
 | `EMQ_SANITIZE` | — | `address`, `undefined`, `thread` (Clang/GCC) |
 
-Artifacts of interest after build:
+Artifacts of interest after `cmake -S core -B build`:
 
 - `build/libemq.a` (or `.lib`) — static library
-- `include/emq/` — public headers
+- `core/include/emq/` — public headers
 - `build/examples/emq_producer_consumer`
 - `build/examples/emq_pubsub_demo`
 
@@ -99,19 +122,19 @@ Artifacts of interest after build:
 ### CMake
 
 ```cmake
-add_subdirectory(path/to/EmbeddedMQ)
+add_subdirectory(path/to/EmbeddedMQ/core)
 target_link_libraries(your_app PRIVATE emq)
 ```
 
 ### Manual
 
 ```bash
-cc -Iinclude your_app.c -Lbuild -lemq -lpthread -o your_app   # Linux/macOS
+cc -Icore/include your_app.c -Lbuild -lemq -lpthread -o your_app   # Linux/macOS
 ```
 
-Public API: [`include/emq/emq.h`](include/emq/emq.h) · types: [`include/emq/emq_types.h`](include/emq/emq_types.h).
+Public API: [`core/include/emq/emq.h`](core/include/emq/emq.h) · types: [`core/include/emq/emq_types.h`](core/include/emq/emq_types.h).
 
-**Ownership rule:** successful `emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer `message.data` to you. Always call `emq_message_release(&m)`.
+**Ownership rule:** successful `emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer `message.data` to you. Always call `emq_message_release(&m)`. Zero-copy FAST path: `emq_claim` / `emq_release_claim`.
 
 ---
 
@@ -131,15 +154,6 @@ Public API: [`include/emq/emq.h`](include/emq/emq.h) · types: [`include/emq/emq
 | `EMQ_STORAGE_RING` | Fixed-size overwrite ring |
 | `EMQ_STORAGE_STREAM` | Offset / replay oriented |
 
-| Policy | Meaning |
-| ------ | ------- |
-| `FIFO` / `LIFO` | Ordering |
-| `PRIORITY` | Higher priority first |
-| `WORK` | Visibility timeout + ack/nack |
-| `RING` | Bounded overwrite |
-| `PUBSUB` / `BROADCAST` | Fanout |
-| `DELAY` | Deliver-at scheduling |
-
 Hints `producers=1` and `consumers=1` enable the SPSC FAST path.
 
 ---
@@ -151,18 +165,27 @@ Hints `producers=1` and `consumers=1` enable the SPSC FAST path.
 ./build/examples/emq_pubsub_demo
 ```
 
-More detail and API walkthrough: [docs/getting-started.md](docs/getting-started.md).
+More detail: [docs/getting-started.md](docs/getting-started.md).
 
 ---
 
-## Benchmarks
+## Bindings
+
+Language clients live under [`bindings/`](bindings/). See each subdirectory for build instructions. The stable C ABI is the contract every binding uses.
+
+---
+
+## Website
+
+The project site is a static page in [`site/`](site/), deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) to GitHub Pages:
+
+**https://a-g-u-p-t-a.github.io/EmbeddedMQ/**
+
+Preview locally by opening `site/index.html` or serving the folder:
 
 ```bash
-./build/bench/emq_bench_load --quick
-./build/bench/emq_bench_compare --ops 100000 --payload 64
+python -m http.server -d site 8080
 ```
-
-Reports throughput, latency percentiles, and process metrics.
 
 ---
 
@@ -170,14 +193,13 @@ Reports throughput, latency percentiles, and process metrics.
 
 | Doc | Contents |
 | --- | -------- |
+| [Website](https://a-g-u-p-t-a.github.io/EmbeddedMQ/) | Landing page |
 | [docs/overview.md](docs/overview.md) | What EmbeddedMQ is, architecture, fit |
 | [docs/getting-started.md](docs/getting-started.md) | Install, first queue, pub/sub, work queues |
-| [`include/emq/emq.h`](include/emq/emq.h) | Full C API |
+| [`core/include/emq/emq.h`](core/include/emq/emq.h) | Full C API |
 
 ---
 
 ## Status
 
-Active C runtime with CI on Windows / Linux / macOS (MSVC, GCC, Clang), plus ASan/UBSan and TSan jobs. The FAST path is the performance focus; durable storage and routing are supported.
-
-Not a network message broker. If you need cross-machine delivery, put a transport beside EmbeddedMQ — don’t expect one inside it.
+Active C runtime with CI on Windows / Linux / macOS (MSVC, GCC, Clang), plus ASan/UBSan and TSan jobs. Monorepo layout hosts the engine in `core/` with bindings, transport, and the GitHub Pages site alongside.
