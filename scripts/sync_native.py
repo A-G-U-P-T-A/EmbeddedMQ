@@ -122,7 +122,13 @@ function(emq_configure_target tgt)
 endfunction()
 
 add_library(emq_static STATIC ${{EMQ_SOURCES}})
-set_target_properties(emq_static PROPERTIES OUTPUT_NAME emq)
+# On MSVC, a shared target named "emq" also emits emq.lib (import lib).
+# Keep the static archive as emq_static.lib in that case to avoid Ninja clashes.
+if(MSVC AND EMQ_BUILD_SHARED)
+  set_target_properties(emq_static PROPERTIES OUTPUT_NAME emq_static)
+else()
+  set_target_properties(emq_static PROPERTIES OUTPUT_NAME emq)
+endif()
 emq_configure_target(emq_static)
 
 if(EMQ_BUILD_SHARED)

@@ -113,11 +113,14 @@ jobs:
       - name: Stage resources + package JAR
         run: |
           set -euo pipefail
-          test -d _natives/native
-          mkdir -p bindings/java/src/main/resources
+          # Artifacts upload out/native/<os>/<arch>/..., so merge lands as _natives/<os>/...
+          test -d _natives
+          mkdir -p bindings/java/src/main/resources/native
           rm -rf bindings/java/src/main/resources/native
-          cp -a _natives/native bindings/java/src/main/resources/
+          mkdir -p bindings/java/src/main/resources/native
+          cp -a _natives/. bindings/java/src/main/resources/native/
           find bindings/java/src/main/resources/native -type f -print
+          test -n "$(find bindings/java/src/main/resources/native -type f | head -1)"
           cd bindings/java
           mvn -B -q package -DskipTests
           mkdir -p ../../dist
@@ -167,6 +170,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
       - uses: actions/download-artifact@v4
         with:
           name: native-sources
@@ -174,6 +180,8 @@ jobs:
       - name: Python + Go smoke
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential
           python -m venv .venv
           . .venv/bin/activate
           pip install -U pip
@@ -181,7 +189,8 @@ jobs:
           cp -a bindings/native bindings/python/native
           pip install ./bindings/python
           python -c 'import embeddedmq; print("python ok")'
-          cd bindings/go && CGO_ENABLED=1 go build ./...
+          # Library package: compile only (no main / no -o).
+          (cd bindings/go && CGO_ENABLED=1 go build -v .)
           echo go ok
 
   publish-github-release:
