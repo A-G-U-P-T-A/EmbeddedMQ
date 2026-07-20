@@ -1,36 +1,42 @@
-# Rust bindings
+# emq (Rust)
 
-Cargo workspace with two crates:
+Cargo workspace modeled on [rusqlite](https://github.com/rusqlite/rusqlite) /
+`libsqlite3-sys`:
 
 | Crate | Role |
 | ----- | ---- |
-| [`emq-sys`](emq-sys/) | Hand-written `extern "C"` + `build.rs` link directives |
+| [`emq-sys`](emq-sys/) | `extern "C"` + `build.rs` that compiles bundled C via [`cc`](https://crates.io/crates/cc) |
 | [`emq`](emq/) | Safe `Runtime`, `Queue`, `Message`, `SpscQueue` |
 
-## Prerequisites
+By default **no system `libemq` is required** — `emq-sys` builds
+`bindings/native` sources.
 
-Build the C library first (static `libemq`):
-
-```bash
-cmake -S core -B build -DEMQ_BUILD_TESTS=OFF
-cmake --build build
+```text
+rust/
+  Cargo.toml          # workspace
+  emq-sys/
+    build.rs
+    src/lib.rs
+  emq/
+    src/lib.rs
 ```
 
 ## Build
 
-From this directory:
-
 ```bash
-# defaults: include=../../core/include, lib=../../build
+# from a clone (run sync if native/ is missing)
+python scripts/sync_native.py
+cd bindings/rust
 cargo build
-
-# override paths
-EMQ_INCLUDE_DIR=/path/to/core/include EMQ_LIB_DIR=/path/to/build cargo build
+cargo test
 ```
 
-Linking requires `libemq.a` (or `emq.lib` on Windows) in `EMQ_LIB_DIR`. Compilation succeeds without the library; linking fails until the core is built.
+```toml
+# in your Cargo.toml (path dep until crates.io publish)
+emq = { path = "path/to/EmbeddedMQ/bindings/rust/emq" }
+```
 
-## Usage sketch
+## Usage
 
 ```rust
 use emq::{Runtime, SpscQueue};
@@ -41,13 +47,12 @@ let q = SpscQueue::new(&rt, "demo", 64)?;
 q.push(b"hello")?;
 let msg = q.pop(Some(Duration::from_millis(100)))?;
 assert_eq!(msg.as_bytes(), b"hello");
-// Message dropped here calls emq_message_release
 ```
 
-## SPSC
+`Message` drop calls `emq_message_release`. `SpscQueue` is `!Sync` (one pusher, one popper).
 
-`SpscQueue` is intentionally `!Sync`. Only one thread may push and one may pop, matching the C SPSC contract documented in `emq.h`.
+## Optional: link a prebuilt libemq
 
-## Conformance
-
-Replay scenarios from [`../conformance/`](../conformance/) against this wrapper (runner TBD).
+```bash
+EMQ_SYSTEM_LIB=1 EMQ_LIB_DIR=../../build cargo build
+```

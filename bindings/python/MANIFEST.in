@@ -1,0 +1,4 @@
+recursive-include native *
+graft src
+include setup.py
+include README.md

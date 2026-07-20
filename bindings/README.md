@@ -1,34 +1,54 @@
 # Language bindings
 
-**Version:** `1.0.0-beta` · Stable contract: C ABI in `core/include/emq/emq.h`.
+**Version:** `1.0.0-beta` · Contract: C ABI in `core/include/emq/emq.h`
 
-| Directory | Status | Technology | Notes |
-| --------- | ------ | ---------- | ----- |
-| [`conformance/`](conformance/) | corpus | JSON + Python validator | Shared scenario replay contract for all bindings |
-| [`rust/`](rust/) | scaffold | `emq-sys` + safe `emq` crate | Hand-written FFI, `EMQ_LIB_DIR` / `EMQ_INCLUDE_DIR` |
-| [`python/`](python/) | scaffold | CPython C-extension | `embeddedmq` package, `EMQ_ROOT` / `EMQ_LIB_DIR` |
-| [`go/`](go/) | scaffold | cgo | `EMQ_INCLUDE` / `EMQ_LIB` env vars |
-| [`java/`](java/) | scaffold | Panama FFM (JDK 21+) | Not JNI; `SymbolLookup.libraryLookup` |
+Bindings follow the usual packaging patterns for each ecosystem
+([go-sqlite3](https://github.com/mattn/go-sqlite3), [rusqlite](https://github.com/rusqlite/rusqlite),
+[sqlite-jdbc](https://github.com/xerial/sqlite-jdbc), Python wheels):
 
-> **Beta note:** clients still link a **prebuilt** `libemq`. They do not yet
-> vendor/compile the engine like SQLite’s amalgamation. See
-> [docs/DISTRIBUTION.md](../docs/DISTRIBUTION.md).
+| Directory | Registry target | How the engine is obtained |
+| --------- | --------------- | -------------------------- |
+| [`native/`](native/) | (shared) | Vendored C sources from `core/` via `scripts/sync_native.py` |
+| [`rust/`](rust/) | crates.io | `emq-sys` compiles bundled sources (`cc`, like rusqlite `bundled`) |
+| [`python/`](python/) | PyPI | Extension compiles vendored `native/` into the wheel/module |
+| [`go/`](go/) | Go module proxy | cgo compiles per-file wrappers (like go-sqlite3 shipping C) |
+| [`java/`](java/) | Maven Central | Fat JAR + `NativeLoader` extracts OS/arch `.dll`/`.so`/`.dylib` |
+| [`conformance/`](conformance/) | — | Shared JSON scenario corpus |
 
-## Quick start
+After changing `core/`, refresh the vendored tree:
 
-1. Build the C core:
+```bash
+python scripts/sync_native.py
+```
 
-   ```bash
-   cmake -S core -B build -DEMQ_BUILD_TESTS=OFF
-   cmake --build build
-   ```
+## Quick start (no separate cmake)
 
-2. Pick a binding and follow its README (link paths differ per toolchain).
+```bash
+# Python
+pip install ./bindings/python
 
-3. Validate shared conformance scenarios:
+# Rust
+cd bindings/rust && cargo build
 
-   ```bash
-   python bindings/conformance/validate_corpus.py bindings/conformance/scenarios/*.json
-   ```
+# Go (needs a C toolchain + cgo)
+cd bindings/go && go build ./...
 
-Each binding wraps the same surface: runtime lifecycle, queue create/push/pop, and `emq_message_release` ownership. Conformance runners that replay `conformance/scenarios/*.json` are future work; the corpus defines the shared contract today.
+# Java — needs prebuilt natives in src/main/resources/native/<os>/<arch>/
+# (produced by .github/workflows/release-bindings.yml) or -Demq.lib.path=
+cd bindings/java && mvn -q package
+```
+
+Escape hatch for a system `libemq`: set `EMQ_LIB_DIR` / `EMQ_SYSTEM_LIB=1` /
+`-tags emq_system` / `-Demq.lib.path=` (see each binding README).
+
+## Layout conventions
+
+```text
+bindings/
+  native/                 # single source of truth for packaged C
+  rust/                   # Cargo workspace (emq-sys + emq)
+  python/                 # src/embeddedmq + vendored native/
+  go/                     # module root; zz_*.c wrappers + emq.go
+  java/                   # Maven src/main/java + resources/native/
+  conformance/            # cross-language scenario corpus
+```

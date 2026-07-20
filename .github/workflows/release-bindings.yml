@@ -1,0 +1,225 @@
+# Build platform natives and package language bindings.
+# Trigger: tag v* or workflow_dispatch.
+#
+# Artifacts:
+#   - libemq shared libraries (win/linux/mac)
+#   - Java JAR with /native/<os>/<arch>/… embedded
+#   - Python sdist (wheels when cibuildwheel secrets/runners allow)
+#
+# Registry publish (Maven Central / PyPI / crates.io) is gated on secrets —
+# this workflow always uploads GitHub Release assets when run from a tag.
+
+name: Release bindings
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-bindings-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync bundled native sources
+        run: python scripts/sync_native.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-sources
+          path: bindings/native
+
+  native:
+    needs: sync-native
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_os: linux
+            artifact_arch: x86_64
+            libname: libemq.so
+          - os: windows-2022
+            artifact_os: windows
+            artifact_arch: x86_64
+            libname: emq.dll
+          - os: macos-latest
+            artifact_os: macos
+            artifact_arch: aarch64
+            libname: libemq.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-sources
+          path: bindings/native
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: choco install ninja -y
+      - name: Configure + build shared libemq
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cmake -S bindings/native -B build-native -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_SHARED=ON
+          else
+            cmake -S bindings/native -B build-native \
+              -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_SHARED=ON
+          fi
+          cmake --build build-native --config Release --parallel
+          mkdir -p "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp -f build-native/emq.dll \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/emq.dll" \
+              || cp -f build-native/Release/emq.dll \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/emq.dll"
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            cp -f build-native/libemq.dylib \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.dylib" \
+              || cp -f build-native/libemq.*.dylib \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.dylib"
+          else
+            cp -f build-native/libemq.so \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.so" \
+              || cp -f build-native/libemq.so.* \
+              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.so"
+          fi
+          ls -la "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.artifact_os }}-${{ matrix.artifact_arch }}
+          path: out/native
+
+  package-java:
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Collect natives into JAR resources
+        run: |
+          set -euo pipefail
+          mkdir -p bindings/java/src/main/resources/native
+          for name in native-linux-x86_64 native-windows-x86_64 native-macos-aarch64; do
+            echo "fetch $name"
+          done
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: _natives
+          merge-multiple: true
+      - name: Stage resources + package JAR
+        run: |
+          set -euo pipefail
+          mkdir -p bindings/java/src/main/resources
+          cp -a _natives/native bindings/java/src/main/resources/
+          find bindings/java/src/main/resources/native -type f -print
+          cd bindings/java
+          mvn -B -q package -DskipTests
+          mkdir -p ../../dist
+          cp target/embeddedmq-*.jar ../../dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-jar
+          path: dist/*.jar
+
+  package-python-sdist:
+    needs: sync-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-sources
+          path: bindings/native
+      - name: Build sdist (vendor native into package tree)
+        run: |
+          python -m pip install -U pip build
+          rm -rf bindings/python/native
+          cp -a bindings/native bindings/python/native
+          cd bindings/python
+          python -m build --sdist
+          mkdir -p ../../dist
+          cp dist/*.tar.gz ../../dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-sdist
+          path: dist/*.tar.gz
+
+  smoke-bundled:
+    needs: sync-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-sources
+          path: bindings/native
+      - name: Python pip install (bundled compile)
+        run: |
+          python -m pip install -U pip
+          python -m pip install ./bindings/python
+          python -c "import embeddedmq; print('python ok', embeddedmq)"
+      - name: Go build (bundled cgo)
+        run: |
+          cd bindings/go
+          go build -o /tmp/emq-go-test .
+          echo go ok
+
+  publish-github-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [native, package-java, package-python-sdist, smoke-bundled]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+      - name: Assemble release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          # Flatten natives
+          if [[ -d _artifacts ]]; then
+            find _artifacts -type f \( -name '*.so' -o -name '*.dll' -o -name '*.dylib' -o -name '*.jar' -o -name '*.tar.gz' \) -print
+            find _artifacts -type f -name '*.jar' -exec cp {} release-assets/ \;
+            find _artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
+            # Zip per-platform natives
+            for d in _artifacts/native-*; do
+              [[ -d "$d" ]] || continue
+              base=$(basename "$d")
+              (cd "$d" && zip -r "../../release-assets/${base}.zip" .)
+            done
+          fi
+          ls -la release-assets || true
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

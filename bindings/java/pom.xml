@@ -6,21 +6,49 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>io.embeddedmq</groupId>
-  <artifactId>embeddedmq-ffm</artifactId>
+  <artifactId>embeddedmq</artifactId>
   <version>1.0.0-beta.1</version>
   <packaging>jar</packaging>
 
-  <name>EmbeddedMQ Panama FFM bindings</name>
-  <description>Foreign Function &amp; Memory API bindings to libemq (JDK 21+)</description>
+  <name>EmbeddedMQ</name>
+  <description>Panama FFM bindings to EmbeddedMQ with bundled native libraries</description>
+  <url>https://github.com/A-G-U-P-T-A/EmbeddedMQ</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>A-G-U-P-T-A</id>
+      <url>https://github.com/A-G-U-P-T-A</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/A-G-U-P-T-A/EmbeddedMQ.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/A-G-U-P-T-A/EmbeddedMQ.git</developerConnection>
+    <url>https://github.com/A-G-U-P-T-A/EmbeddedMQ</url>
+  </scm>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <emq.include.dir>${project.basedir}/../../core/include</emq.include.dir>
-    <emq.lib.dir>${project.basedir}/../../build</emq.lib.dir>
+    <emq.natives.dir>${project.basedir}/src/main/resources/native</emq.natives.dir>
   </properties>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <includes>
+          <include>**/*</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -28,21 +56,69 @@
         <version>3.13.0</version>
         <configuration>
           <release>${maven.compiler.release}</release>
-          <compilerArgs>
-            <arg>--enable-preview</arg>
-          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.2.5</version>
-        <configuration>
-          <argLine>--enable-native-access=ALL-UNNAMED
-            -Djava.library.path=${emq.lib.dir}
-            -Demq.lib.path=${emq.lib.dir}</argLine>
-        </configuration>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals><goal>jar-no-fork</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.2</version>
+        <executions>
+          <execution>
+            <id>attach-javadocs</id>
+            <goals><goal>jar</goal></goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
+
+  <!-- Enable with -Pcentral once Sonatype namespace + GPG secrets are configured. -->
+  <profiles>
+    <profile>
+      <id>central</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.7.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>validated</waitUntil>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

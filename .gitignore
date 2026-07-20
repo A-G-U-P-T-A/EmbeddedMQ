@@ -5,6 +5,9 @@ build-*/
 cmake-build-*/
 out/
 install/
+bindings/native.staging/
+bindings/python/src/*.egg-info/
+bindings/rust/target/
 
 # CMake / CTest generated
 CMakeCache.txt
@@ -33,6 +36,11 @@ cmake_install.cmake
 *.so.*
 *.dylib
 *.dll
+# Allow JAR-bundled natives staged by release CI
+!bindings/java/src/main/resources/native/**/*.so
+!bindings/java/src/main/resources/native/**/*.so.*
+!bindings/java/src/main/resources/native/**/*.dylib
+!bindings/java/src/main/resources/native/**/*.dll
 
 # Executables / linker
 *.exe

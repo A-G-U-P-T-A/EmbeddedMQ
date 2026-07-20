@@ -1,27 +1,32 @@
-# Python bindings
+# embeddedmq (Python)
 
-CPython extension wrapping core queue operations (`Runtime`, `Queue`, `Message`).
+CPython extension for EmbeddedMQ. Uses a standard **src layout** and vendors the
+C engine under `native/` (refreshed by `scripts/sync_native.py`), so
+`pip install` compiles the library into the extension — no prior cmake step.
 
-## Prerequisites
-
-Build static `libemq`:
-
-```bash
-cmake -S core -B build -DEMQ_BUILD_TESTS=OFF
-cmake --build build
+```text
+python/
+  pyproject.toml
+  setup.py
+  MANIFEST.in
+  native/                 # vendored engine (do not edit; sync_native.py)
+  src/embeddedmq/
+    __init__.py
+    _emq.c
 ```
 
-## Install (editable)
-
-From this directory:
+## Install
 
 ```bash
-# EMQ_ROOT defaults to repo root (../.. from bindings/python)
-pip install -e .
+# from a clone
+pip install ./bindings/python
 
-# override library location
-EMQ_ROOT=/path/to/EmbeddedMQ EMQ_LIB_DIR=/path/to/build pip install -e .
+# editable
+pip install -e ./bindings/python
 ```
+
+Needs a C compiler on the machine for source installs. Prebuilt wheels are
+produced by the release workflow when published to PyPI.
 
 ## Usage
 
@@ -36,17 +41,10 @@ assert msg.data() == b"hello"
 q.close()
 ```
 
-`Message` releases native memory when garbage-collected (`emq_message_release`).
+`Message` calls `emq_message_release` when garbage-collected.
 
-## Layout
+## Optional: link a prebuilt libemq
 
+```bash
+EMQ_SYSTEM_LIB=1 EMQ_LIB_DIR=/path/to/build pip install -e ./bindings/python
 ```
-python/
-  pyproject.toml
-  setup.py          # Extension build (EMQ_ROOT, EMQ_LIB_DIR)
-  src/embeddedmq/
-    __init__.py
-    _emq.c          # C extension
-```
-
-Compilation requires headers under `core/include`. Linking requires `libemq` in the build directory.

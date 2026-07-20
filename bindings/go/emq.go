@@ -1,14 +1,20 @@
 // Package emq wraps libemq via cgo.
 //
-// Set EMQ_INCLUDE to the directory containing emq/emq.h and EMQ_LIB to the
-// directory containing libemq before building:
+// By default the EmbeddedMQ C engine is compiled from bindings/native
+// (SQLite-style). Run `python scripts/sync_native.py` after core changes.
 //
-//	EMQ_INCLUDE=../../core/include EMQ_LIB=../../build go build .
+// Optional: link a prebuilt lib with
+//
+//	EMQ_INCLUDE=... EMQ_LIB=... go build -tags emq_system .
 package emq
 
 /*
-#cgo CFLAGS: -I${EMQ_INCLUDE}
-#cgo LDFLAGS: -L${EMQ_LIB} -lemq
+#cgo !emq_system CFLAGS: -I${SRCDIR}/../native/include -I${SRCDIR}/../native/src -std=c11
+#cgo !emq_system,windows CFLAGS: -DEMQ_PLATFORM_WINDOWS -D_CRT_SECURE_NO_WARNINGS
+#cgo !emq_system,linux CFLAGS: -D_GNU_SOURCE -DEMQ_PLATFORM_POSIX
+#cgo !emq_system,darwin CFLAGS: -D_DARWIN_C_SOURCE -DEMQ_PLATFORM_POSIX
+#cgo emq_system CFLAGS: -DEMQ_SYSTEM_LIB=1 -I${EMQ_INCLUDE}
+#cgo emq_system LDFLAGS: -L${EMQ_LIB} -lemq
 #cgo windows LDFLAGS: -lSynchronization
 #cgo !windows LDFLAGS: -lpthread
 

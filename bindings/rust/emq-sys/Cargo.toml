@@ -2,7 +2,23 @@
 name = "emq-sys"
 version = "1.0.0-beta.1"
 edition = "2021"
-description = "Raw FFI bindings to libemq"
+description = "Raw FFI bindings to libemq (bundles native sources by default)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/A-G-U-P-T-A/EmbeddedMQ"
 links = "emq"
+include = [
+  "src/**",
+  "build.rs",
+  "Cargo.toml",
+  "../native/**",
+]
+
+[features]
+default = ["bundled"]
+# Compile EmbeddedMQ C sources from bindings/native (SQLite-style).
+bundled = []
+# Link an external libemq (set EMQ_LIB_DIR).
+system = []
 
 [build-dependencies]
+cc = "1.1"

@@ -12,11 +12,11 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * Minimal Panama FFM scaffold for libemq.
+ * Panama FFM bindings for libemq (JDK 21+).
  * <p>
- * This is <strong>not</strong> JNI — it uses {@link java.lang.foreign} (JDK 21+).
- * Build libemq first, then set {@code -Demq.lib.path=/path/to/build} or place
- * the native library on {@code java.library.path}.
+ * Natives are loaded like sqlite-jdbc: the JAR ships
+ * {@code /native/<os>/<arch>/libemq.*}; {@link NativeLoader} extracts and loads
+ * the matching library. Override with {@code -Demq.lib.path=...} for local builds.
  */
 public final class Emq implements AutoCloseable {
 
@@ -163,11 +163,7 @@ public final class Emq implements AutoCloseable {
     }
 
     private static Path resolveLibrary() {
-        String prop = System.getProperty("emq.lib.path");
-        if (prop != null) {
-            return Path.of(prop);
-        }
-        return Path.of(System.getProperty("user.dir"), "..", "..", "build");
+        return NativeLoader.resolve();
     }
 
     private static MethodHandle downcall(String name, FunctionDescriptor desc) {

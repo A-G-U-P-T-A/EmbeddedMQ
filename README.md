@@ -177,10 +177,10 @@ Language clients live under [`bindings/`](bindings/). See each subdirectory for 
 
 ## Releases / clients
 
-GitHub Releases tag client + core snapshots (see [CHANGELOG.md](CHANGELOG.md)).
-**1.0.0-beta** ships binding *scaffolds* that still need a local `libemq` build.
-How SQLite gets into apps (amalgamation / bundled source / wheels) and how we
-plan to match that is documented in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
+See [CHANGELOG.md](CHANGELOG.md) and [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
+Language clients under [`bindings/`](bindings/) bundle the C engine so typical
+installs do not need a separate `libemq` build (Rust/Python/Go compile from
+vendored sources; Java loads OS-specific natives from the JAR).
 
 ## Website
 
@@ -188,7 +188,8 @@ The project site is a static page in [`site/`](site/), deployed by [`.github/wor
 
 **https://a-g-u-p-t-a.github.io/EmbeddedMQ/**
 
-One-time setup (required — Actions cannot create the Pages site): **Settings → Pages → Build and deployment → Source: GitHub Actions**. Same constraint as [wireshark-mcp](https://github.com/A-G-U-P-T-A/wireshark-mcp).
+One-time repo setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**
+(GitHub’s `GITHUB_TOKEN` cannot create the Pages site by itself).
 
 Preview locally by opening `site/index.html` or serving the folder:
 

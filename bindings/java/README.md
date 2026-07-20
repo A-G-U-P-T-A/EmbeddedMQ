@@ -1,57 +1,69 @@
-# Java bindings (Panama FFM)
+# embeddedmq (Java)
 
-JDK **21+** scaffold using the [Foreign Function & Memory API](https://openjdk.org/jeps/454) — **not JNI**.
+JDK **21+** Panama FFM bindings (not JNI), packaged like
+[xerial/sqlite-jdbc](https://github.com/xerial/sqlite-jdbc):
 
-## Prerequisites
+1. Maven artifact contains Java code **and** platform natives under
+   `src/main/resources/native/<os>/<arch>/`
+2. [`NativeLoader`](src/main/java/io/embeddedmq/NativeLoader.java) detects
+   OS/arch, extracts the matching `emq.dll` / `libemq.so` / `libemq.dylib`,
+   and loads it for FFM `SymbolLookup`
 
-1. Build `libemq` (or `emq.dll` / `libemq.so` if you enable shared builds).
-2. JDK 21 or later with native access enabled for tests.
-
-```bash
-cmake -S core -B build -DEMQ_BUILD_TESTS=OFF
-cmake --build build
+```text
+java/
+  pom.xml                         # io.embeddedmq:embeddedmq
+  src/main/java/io/embeddedmq/
+    Emq.java
+    NativeLoader.java
+  src/main/resources/native/
+    linux/x86_64/libemq.so
+    windows/x86_64/emq.dll
+    macos/aarch64/libemq.dylib
 ```
+
+Natives are filled by [`.github/workflows/release-bindings.yml`](../../.github/workflows/release-bindings.yml).
 
 ## Build
 
 ```bash
 cd bindings/java
-mvn -q compile
+mvn -q package
 ```
 
-Point Maven at the native library directory:
+Local override (skip JAR natives):
 
 ```bash
-mvn -q test -Demq.lib.path=/path/to/build
+mvn -q test -Demq.lib.path=/path/to/dir/with/libemq
 ```
 
-Surefire passes `-Djava.library.path` and `--enable-native-access=ALL-UNNAMED`.
-
-## Usage sketch
+## Usage
 
 ```java
+import io.embeddedmq.Emq;
+import java.nio.charset.StandardCharsets;
+
 try (Emq rt = new Emq()) {
     try (var q = rt.openQueue("demo", 64)) {
         q.push("hello".getBytes(StandardCharsets.UTF_8));
         try (var msg = q.pop(0)) {
-            System.out.println(new String(msg.data()));
+            System.out.println(new String(msg.data(), StandardCharsets.UTF_8));
         }
     }
 }
 ```
 
-`Message.close()` calls `emq_message_release`.
-
-## Layout
-
-```
-java/
-  pom.xml
-  src/main/java/io/embeddedmq/Emq.java
+```xml
+<!-- after Maven Central publish -->
+<dependency>
+  <groupId>io.embeddedmq</groupId>
+  <artifactId>embeddedmq</artifactId>
+  <version>1.0.0-beta.1</version>
+</dependency>
 ```
 
 ## Notes
 
-- Struct layouts in `Emq.java` use approximate offsets suitable for a scaffold; production bindings should generate layouts from `emq_types.h` (jextract or manual `MemoryLayout` definitions).
-- Static linking is not supported by FFM; use a shared `libemq` or load the platform library from your build tree.
-- No JNI `.so` / `.dll` bridge layer is involved.
+- Struct layouts in `Emq.java` are still scaffold-grade; production should use
+  jextract / explicit `MemoryLayout` from `emq_types.h`.
+- FFM requires a **shared** library (not a static `.a`).
+- Publish profile: `mvn -Pcentral deploy` (needs Sonatype namespace + GPG).
