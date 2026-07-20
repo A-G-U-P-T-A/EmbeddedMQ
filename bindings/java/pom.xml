@@ -11,7 +11,8 @@
   -->
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <version>1.0.0-beta.3</version>
+  <!-- Local/dev; bump + publish only after load numbers are accepted. -->
+  <version>1.0.0-beta.4-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <name>EmbeddedMQ</name>
@@ -45,6 +46,15 @@
     <emq.natives.dir>${project.basedir}/src/main/resources/native</emq.natives.dir>
   </properties>
 
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
   <build>
     <resources>
       <resource>
@@ -67,6 +77,26 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.2</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <configuration>
+          <classpathScope>test</classpathScope>
+          <mainClass>io.embeddedmq.QueueLoadTest</mainClass>
+          <jvmArgs>
+            <jvmArg>--enable-native-access=ALL-UNNAMED</jvmArg>
+          </jvmArgs>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

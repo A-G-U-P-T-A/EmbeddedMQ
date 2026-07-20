@@ -2,8 +2,11 @@ package io.embeddedmq.examples;
 
 import io.embeddedmq.Emq;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.ValueLayout;
+
 /**
- * Maven Central embeddedmq queue load test.
+ * Maven / local JAR queue load test using the fast path ({@code pushNative}+{@code popCopy}).
  */
 public final class LoadTest {
     public static void main(String[] args) {
@@ -14,19 +17,32 @@ public final class LoadTest {
         for (int i = 0; i < payloadLen; i++) {
             payload[i] = (byte) (i % 256);
         }
+        byte[] dst = new byte[payloadLen];
 
         System.out.printf("client=java n=%d payload=%d capacity=%d%n", n, payloadLen, capacity);
 
-        try (Emq emq = new Emq(); Emq.Queue q = emq.openQueue("loadtest-java", capacity)) {
+        try (Emq emq = new Emq();
+             Emq.Queue q = emq.openQueue("loadtest-java", capacity);
+             Arena arena = Arena.ofConfined()) {
+            var nativePayload = arena.allocateFrom(ValueLayout.JAVA_BYTE, payload);
+
+            // warmup
+            for (int i = 0; i < 20_000; i++) {
+                q.pushNative(nativePayload, payloadLen);
+            }
+            for (int i = 0; i < 20_000; i++) {
+                q.popCopy(dst, 1000);
+            }
+
             long t0 = System.nanoTime();
             for (int i = 0; i < n; i++) {
-                q.push(payload);
+                q.pushNative(nativePayload, payloadLen);
             }
             long t1 = System.nanoTime();
-
             for (int i = 0; i < n; i++) {
-                try (Emq.Message msg = q.pop(1000)) {
-                    msg.data();
+                int got = q.popCopy(dst, 1000);
+                if (got != payloadLen) {
+                    throw new IllegalStateException("bad len " + got);
                 }
             }
             long t2 = System.nanoTime();

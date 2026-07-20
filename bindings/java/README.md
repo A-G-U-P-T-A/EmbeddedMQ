@@ -1,6 +1,6 @@
 # embeddedmq (Java)
 
-JDK **21+** Panama FFM bindings (not JNI), packaged like
+JDK **22+** Panama FFM bindings (not JNI), packaged like
 [xerial/sqlite-jdbc](https://github.com/xerial/sqlite-jdbc):
 
 1. Maven artifact contains Java code **and** platform natives under
@@ -11,7 +11,7 @@ JDK **21+** Panama FFM bindings (not JNI), packaged like
 
 ```text
 java/
-  pom.xml                         # io.embeddedmq:embeddedmq
+  pom.xml
   src/main/java/io/embeddedmq/
     Emq.java
     NativeLoader.java
@@ -19,51 +19,62 @@ java/
     linux/x86_64/libemq.so
     windows/x86_64/emq.dll
     macos/aarch64/libemq.dylib
+  src/test/java/io/embeddedmq/
+    QueueSmokeTest.java
+    QueueLoadTest.java      # bottleneck / ops-per-sec harness
 ```
 
-Natives are filled by [`.github/workflows/release-bindings.yml`](../../.github/workflows/release-bindings.yml).
-
-## Build
-
-```bash
-cd bindings/java
-mvn -q package
-```
-
-Local override (skip JAR natives):
-
-```bash
-mvn -q test -Demq.lib.path=/path/to/dir/with/libemq
-```
-
-## Usage
+## Hot-path API (preferred)
 
 ```java
-import io.embeddedmq.Emq;
-import java.nio.charset.StandardCharsets;
+try (Emq rt = new Emq();
+     var q = rt.openQueue("demo", 64);
+     var arena = java.lang.foreign.Arena.ofConfined()) {
+    byte[] payload = "hello".getBytes();
+    var nativePayload = arena.allocateFrom(
+            java.lang.foreign.ValueLayout.JAVA_BYTE, payload);
+    byte[] dst = new byte[payload.length];
 
-try (Emq rt = new Emq()) {
-    try (var q = rt.openQueue("demo", 64)) {
-        q.push("hello".getBytes(StandardCharsets.UTF_8));
-        try (var msg = q.pop(0)) {
-            System.out.println(new String(msg.data(), StandardCharsets.UTF_8));
-        }
-    }
+    q.pushNative(nativePayload, payload.length); // no per-call alloc
+    int n = q.popCopy(dst, 1000);                // no Message object
 }
 ```
 
+`push(byte[])` / `pop()` still work but allocate more; use them for convenience,
+not tight loops.
+
+## Build + test (local JAR)
+
+Natives must be staged first (CI does this; locally pull from a prior release JAR
+or copy `out/native/...` from `release-bindings`).
+
+```bash
+cd bindings/java
+# ensure native/<os>/<arch>/libemq.* exists under src/main/resources
+mvn -q test          # includes throughput floor (>1.5M round-trip ops/s)
+bash run-loadtest.sh # full 100k bottleneck breakdown
+```
+
+JVM flag required: `--enable-native-access=ALL-UNNAMED`.
+
+## Why Central `1.0.0-beta.3` looked ~30× slow
+
+The published client used `MethodHandle.invokeWithArguments`, allocated a new
+arena segment per push/pop, and always copied via `Message.data()`. That was
+**client overhead**, not the C engine. Local `1.0.0-beta.4-SNAPSHOT` fixes:
+
+- `invokeExact` + `Linker.Option.critical`
+- reused push/pop scratch buffers
+- `pushNative` / `popCopy` fast path
+
+Do **not** publish another Central version until `run-loadtest.sh` numbers look right.
+
+## Dependency
+
 ```xml
-<!-- after Maven Central publish -->
 <dependency>
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <version>1.0.0-beta.1</version>
+  <version>1.0.0-beta.4-SNAPSHOT</version> <!-- local install until published -->
 </dependency>
 ```
-
-## Notes
-
-- Struct layouts in `Emq.java` are still scaffold-grade; production should use
-  jextract / explicit `MemoryLayout` from `emq_types.h`.
-- FFM requires a **shared** library (not a static `.a`).
-- Publish profile: `mvn -Pcentral deploy` (needs Sonatype namespace + GPG).

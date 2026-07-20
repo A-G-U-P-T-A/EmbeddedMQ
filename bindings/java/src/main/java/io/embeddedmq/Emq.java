@@ -16,10 +16,15 @@ import java.util.Objects;
 
 /**
  * Panama FFM bindings for libemq (JDK 22+).
- * <p>
- * Natives are loaded like sqlite-jdbc: the JAR ships
- * {@code /native/<os>/<arch>/libemq.*}; {@link NativeLoader} extracts and loads
- * the matching library. Override with {@code -Demq.lib.path=...} for local builds.
+ *
+ * <p>Hot path notes:
+ * <ul>
+ *   <li>Uses {@code invokeExact} (not {@code invokeWithArguments}).</li>
+ *   <li>Marks short native calls as {@link Linker.Option#critical}.</li>
+ *   <li>Reuses per-queue scratch segments for push/pop.</li>
+ *   <li>{@link Queue#push(byte[])} / {@link Queue#popCopy(byte[], int)} avoid
+ *       per-message Java object allocation.</li>
+ * </ul>
  */
 public final class Emq implements AutoCloseable {
 
@@ -28,8 +33,7 @@ public final class Emq implements AutoCloseable {
     public static final int EMQ_ERR_EMPTY = -5;
     public static final int EMQ_ERR_TIMEOUT = -7;
 
-    /** Matches {@code emq_queue_opts} on LP64 / Windows x64. */
-    private static final StructLayout QUEUE_OPTS = MemoryLayout.structLayout(
+    static final StructLayout QUEUE_OPTS = MemoryLayout.structLayout(
             ValueLayout.JAVA_INT.withName("storage"),
             ValueLayout.JAVA_INT.withName("policy"),
             ValueLayout.JAVA_INT.withName("delivery"),
@@ -45,8 +49,7 @@ public final class Emq implements AutoCloseable {
             ValueLayout.JAVA_INT.withName("high_watermark"),
             ValueLayout.JAVA_INT.withName("low_watermark"));
 
-    /** Matches {@code emq_message} on LP64 / Windows x64. */
-    private static final StructLayout MESSAGE = MemoryLayout.structLayout(
+    static final StructLayout MESSAGE = MemoryLayout.structLayout(
             ValueLayout.JAVA_LONG.withName("id"),
             ValueLayout.JAVA_LONG.withName("offset"),
             ValueLayout.JAVA_INT.withName("priority"),
@@ -69,39 +72,44 @@ public final class Emq implements AutoCloseable {
     private static final SymbolLookup LOOKUP = SymbolLookup.libraryLookup(
             resolveLibrary(), Arena.global());
 
-    private static final MethodHandle MH_RUNTIME_CREATE = downcall("emq_runtime_create",
+    // critical(true): short native calls — huge win vs default Panama transitions.
+    private static final Linker.Option CRITICAL = Linker.Option.critical(true);
+
+    private static final MethodHandle MH_RUNTIME_CREATE = downcall(
+            "emq_runtime_create",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_RUNTIME_DESTROY = downcall("emq_runtime_destroy",
+    private static final MethodHandle MH_RUNTIME_DESTROY = downcall(
+            "emq_runtime_destroy",
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_QUEUE_OPTS_DEFAULT = downcall("emq_queue_opts_default",
+    private static final MethodHandle MH_QUEUE_OPTS_DEFAULT = downcall(
+            "emq_queue_opts_default",
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_QUEUE_CREATE = downcall("emq_queue_create",
+    private static final MethodHandle MH_QUEUE_CREATE = downcall(
+            "emq_queue_create",
             FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.ADDRESS));
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_QUEUE_CLOSE = downcall("emq_queue_close",
+    private static final MethodHandle MH_QUEUE_CLOSE = downcallCritical(
+            "emq_queue_close",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_PUSH = downcall("emq_push",
+    private static final MethodHandle MH_PUSH = downcallCritical(
+            "emq_push",
             FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.JAVA_LONG,
-                    ValueLayout.ADDRESS));
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                    ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
 
-    private static final MethodHandle MH_POP = downcall("emq_pop",
+    private static final MethodHandle MH_POP = downcallCritical(
+            "emq_pop",
             FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.ADDRESS,
-                    ValueLayout.JAVA_INT));
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
-    private static final MethodHandle MH_MESSAGE_RELEASE = downcall("emq_message_release",
+    private static final MethodHandle MH_MESSAGE_RELEASE = downcallCritical(
+            "emq_message_release",
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
     private final Arena arena = Arena.ofConfined();
@@ -110,7 +118,7 @@ public final class Emq implements AutoCloseable {
 
     public Emq() {
         MemorySegment rtOut = arena.allocate(ValueLayout.ADDRESS);
-        EmqException.check(invokeInt(MH_RUNTIME_CREATE, rtOut));
+        EmqException.check(invokeCreate(rtOut));
         runtime = rtOut.get(ValueLayout.ADDRESS, 0);
     }
 
@@ -118,18 +126,18 @@ public final class Emq implements AutoCloseable {
         Objects.requireNonNull(name);
         MemorySegment cName = arena.allocateFrom(name, StandardCharsets.UTF_8);
         MemorySegment opts = arena.allocate(QUEUE_OPTS);
-        invokeVoid(MH_QUEUE_OPTS_DEFAULT, opts);
+        invokeOptsDefault(opts);
         VH_CAPACITY.set(opts, 0L, capacity);
 
         MemorySegment qOut = arena.allocate(ValueLayout.ADDRESS);
-        EmqException.check(invokeInt(MH_QUEUE_CREATE, runtime, cName, opts, qOut));
+        EmqException.check(invokeQueueCreate(runtime, cName, opts, qOut));
         return new Queue(qOut.get(ValueLayout.ADDRESS, 0));
     }
 
     @Override
     public void close() {
         if (!closed) {
-            invokeVoid(MH_RUNTIME_DESTROY, runtime);
+            invokeDestroy(runtime);
             closed = true;
             arena.close();
         }
@@ -137,30 +145,83 @@ public final class Emq implements AutoCloseable {
 
     public final class Queue implements AutoCloseable {
         private final MemorySegment handle;
+        private final MemorySegment msgScratch = arena.allocate(MESSAGE);
+        private MemorySegment pushScratch = MemorySegment.NULL;
+        private long pushScratchCap;
         private boolean queueClosed;
 
         Queue(MemorySegment handle) {
             this.handle = handle;
         }
 
+        /** Convenience push — copies into a reused native scratch buffer. */
         public void push(byte[] data) {
             Objects.requireNonNull(data);
-            MemorySegment payload = data.length == 0
-                    ? MemorySegment.NULL
-                    : arena.allocateFrom(ValueLayout.JAVA_BYTE, data);
-            EmqException.check(invokeInt(MH_PUSH, handle, payload, (long) data.length, MemorySegment.NULL));
+            if (data.length == 0) {
+                EmqException.check(invokePush(handle, MemorySegment.NULL, 0L, MemorySegment.NULL));
+                return;
+            }
+            ensurePushScratch(data.length);
+            MemorySegment.copy(data, 0, pushScratch, ValueLayout.JAVA_BYTE, 0, data.length);
+            EmqException.check(invokePush(handle, pushScratch, data.length, MemorySegment.NULL));
         }
 
+        /**
+         * Zero-copy push from an already-native segment (caller keeps it live
+         * until {@code emq_push} returns — payload is copied into the queue).
+         */
+        public void pushNative(MemorySegment data, long size) {
+            EmqException.check(invokePush(handle,
+                    data == null ? MemorySegment.NULL : data,
+                    size,
+                    MemorySegment.NULL));
+        }
+
+        /**
+         * High-throughput pop: copy payload into {@code dst}, release native
+         * message, return byte length. Avoids Message allocation.
+         */
+        public int popCopy(byte[] dst, int timeoutMs) {
+            Objects.requireNonNull(dst);
+            msgScratch.fill((byte) 0);
+            EmqException.check(invokePop(handle, msgScratch, timeoutMs));
+            try {
+                MemorySegment ptr = (MemorySegment) VH_MSG_DATA.get(msgScratch, 0L);
+                long size = (long) VH_MSG_SIZE.get(msgScratch, 0L);
+                if (ptr.address() == 0 || size <= 0) {
+                    return 0;
+                }
+                if (size > dst.length) {
+                    throw new IllegalArgumentException(
+                            "dst too small: need " + size + " have " + dst.length);
+                }
+                MemorySegment.copy(ptr.reinterpret(size), ValueLayout.JAVA_BYTE, 0, dst, 0, (int) size);
+                return (int) size;
+            } finally {
+                invokeMessageRelease(msgScratch);
+            }
+        }
+
+        /** Compatibility API (allocates a Message wrapper). Prefer {@link #popCopy}. */
         public Message pop(int timeoutMs) {
-            MemorySegment msg = arena.allocate(MESSAGE);
-            EmqException.check(invokeInt(MH_POP, handle, msg, timeoutMs));
-            return new Message(msg);
+            MemorySegment owned = arena.allocate(MESSAGE);
+            EmqException.check(invokePop(handle, owned, timeoutMs));
+            return new Message(owned);
+        }
+
+        private void ensurePushScratch(int need) {
+            if (pushScratchCap >= need) {
+                return;
+            }
+            long cap = Math.max(need, 256);
+            pushScratch = arena.allocate(cap);
+            pushScratchCap = cap;
         }
 
         @Override
         public void close() {
             if (!queueClosed) {
-                EmqException.check(invokeInt(MH_QUEUE_CLOSE, handle));
+                EmqException.check(invokeQueueClose(handle));
                 queueClosed = true;
             }
         }
@@ -177,16 +238,29 @@ public final class Emq implements AutoCloseable {
         public byte[] data() {
             MemorySegment ptr = (MemorySegment) VH_MSG_DATA.get(segment, 0L);
             long size = (long) VH_MSG_SIZE.get(segment, 0L);
-            if (ptr.equals(MemorySegment.NULL) || size <= 0) {
+            if (ptr.address() == 0 || size <= 0) {
                 return new byte[0];
             }
             return ptr.reinterpret(size).toArray(ValueLayout.JAVA_BYTE);
         }
 
+        public MemorySegment dataSegment() {
+            MemorySegment ptr = (MemorySegment) VH_MSG_DATA.get(segment, 0L);
+            long size = (long) VH_MSG_SIZE.get(segment, 0L);
+            if (ptr.address() == 0 || size <= 0) {
+                return MemorySegment.NULL;
+            }
+            return ptr.reinterpret(size);
+        }
+
+        public long size() {
+            return (long) VH_MSG_SIZE.get(segment, 0L);
+        }
+
         @Override
         public void close() {
             if (!released) {
-                invokeVoid(MH_MESSAGE_RELEASE, segment);
+                invokeMessageRelease(segment);
                 released = true;
             }
         }
@@ -202,20 +276,86 @@ public final class Emq implements AutoCloseable {
         return LINKER.downcallHandle(sym, desc);
     }
 
-    private static int invokeInt(MethodHandle mh, Object... args) {
+    private static MethodHandle downcallCritical(String name, FunctionDescriptor desc) {
+        MemorySegment sym = LOOKUP.find(name)
+                .orElseThrow(() -> new UnsatisfiedLinkError("missing symbol: " + name));
+        return LINKER.downcallHandle(sym, desc, CRITICAL);
+    }
+
+    private static int invokeCreate(MemorySegment out) {
         try {
-            return (int) mh.invokeWithArguments(args);
+            return (int) MH_RUNTIME_CREATE.invokeExact(out);
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw wrap(t);
         }
     }
 
-    private static void invokeVoid(MethodHandle mh, Object... args) {
+    private static void invokeDestroy(MemorySegment rt) {
         try {
-            mh.invokeWithArguments(args);
+            MH_RUNTIME_DESTROY.invokeExact(rt);
         } catch (Throwable t) {
-            throw new RuntimeException(t);
+            throw wrap(t);
         }
+    }
+
+    private static void invokeOptsDefault(MemorySegment opts) {
+        try {
+            MH_QUEUE_OPTS_DEFAULT.invokeExact(opts);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokeQueueCreate(
+            MemorySegment rt, MemorySegment name, MemorySegment opts, MemorySegment out) {
+        try {
+            return (int) MH_QUEUE_CREATE.invokeExact(rt, name, opts, out);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokeQueueClose(MemorySegment q) {
+        try {
+            return (int) MH_QUEUE_CLOSE.invokeExact(q);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokePush(
+            MemorySegment q, MemorySegment data, long size, MemorySegment meta) {
+        try {
+            return (int) MH_PUSH.invokeExact(q, data, size, meta);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokePop(MemorySegment q, MemorySegment msg, int timeoutMs) {
+        try {
+            return (int) MH_POP.invokeExact(q, msg, timeoutMs);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static void invokeMessageRelease(MemorySegment msg) {
+        try {
+            MH_MESSAGE_RELEASE.invokeExact(msg);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static RuntimeException wrap(Throwable t) {
+        if (t instanceof RuntimeException re) {
+            return re;
+        }
+        if (t instanceof Error e) {
+            throw e;
+        }
+        return new RuntimeException(t);
     }
 
     public static final class EmqException extends RuntimeException {

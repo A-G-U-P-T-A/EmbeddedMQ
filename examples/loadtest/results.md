@@ -3,25 +3,33 @@
 Workload: **100,000** messages × **64-byte** payload, single producer/consumer,
 push all then pop all. Host: Docker on Windows (Linux containers).
 
-| Client | Source | Push ops/s | Pop ops/s | Round-trip ops/s | Total |
-|--------|--------|------------|-----------|------------------|-------|
-| **Rust** | crates.io `emq 1.0.0-beta.1` | 53.5M | 17.4M | **13.2M** | 7.6 ms |
-| **Python** | PyPI `embeddedmq 1.0.0b1` | 8.9M | 5.1M | **3.3M** | 30.7 ms |
-| **Go** | monorepo (cgo) | 10.9M | 3.0M | **2.4M** | 42.3 ms |
-| **Java** | Maven `1.0.0-beta.3` | 0.83M | 0.96M | **0.45M** | 224.6 ms |
+## Current (local `1.0.0-beta.4-SNAPSHOT` Java + published others)
 
-Raw lines:
+| Client | Source | Round-trip | Notes |
+|--------|--------|------------|-------|
+| **Rust** | crates.io `emq 1.0.0-beta.1` | **13.2M ops/s** | reference |
+| **Java (fast path)** | local SNAPSHOT | **5.0–7.2M ops/s** | `pushNative` + `popCopy` |
+| **Python** | PyPI `1.0.0b1` | **3.3M ops/s** | |
+| **Go** | monorepo cgo | **2.4M ops/s** | |
+| **Java (legacy API)** | local SNAPSHOT | **~0.85M ops/s** | `Message` + `data()` — avoid in hot loops |
+
+### Java bottleneck breakdown (`bindings/java` `QueueLoadTest`)
+
+| Mode | Round-trip | What it measures |
+|------|------------|------------------|
+| `legacy_Message+data()` | ~0.85M/s | Old Central-style API (alloc + copy) |
+| `push+popCopy` | ~3.0M/s | byte[] push with scratch reuse |
+| `pushNative+popCopy` | **~7.2M/s** | stable native payload + popCopy |
+
+Published Central **`1.0.0-beta.3`** matched the legacy path (~0.45M/s). That was
+**client overhead**, not the C engine. Do not republish until the fast path is
+what docs/examples use.
+
+## Earlier published-client run (pre-fix Java)
 
 ```text
-RESULT lang=rust   push_ops=53474363/s pop_ops=17443310/s roundtrip_ops=13152855/s
-RESULT lang=python push_ops=8923770/s  pop_ops=5142774/s  roundtrip_ops=3262559/s
-RESULT lang=go     push_ops=10856189/s pop_ops=3018394/s  roundtrip_ops=2361747/s
-RESULT lang=java   push_ops=829466/s   pop_ops=960779/s   roundtrip_ops=445153/s
+RESULT lang=rust   roundtrip_ops=13152855/s
+RESULT lang=python roundtrip_ops=3262559/s
+RESULT lang=go     roundtrip_ops=2361747/s
+RESULT lang=java   roundtrip_ops=445153/s   # beta.3 broken hot path
 ```
-
-Notes:
-
-- Numbers are single-run, same container class, not a lab benchmark.
-- Java pays Panama FFM + per-call `byte[]` copy overhead.
-- Go remote `go get` still needs `bindings/native` vendored into the module;
-  this run used a monorepo `replace`.
