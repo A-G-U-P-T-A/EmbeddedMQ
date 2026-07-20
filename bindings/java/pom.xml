@@ -11,7 +11,7 @@
   -->
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <version>1.0.0-beta.1</version>
+  <version>1.0.0-beta.2</version>
   <packaging>jar</packaging>
 
   <name>EmbeddedMQ</name>
@@ -123,7 +123,7 @@
             <configuration>
               <publishingServerId>central</publishingServerId>
               <autoPublish>true</autoPublish>
-              <waitUntil>validated</waitUntil>
+              <waitUntil>published</waitUntil>
             </configuration>
           </plugin>
         </plugins>
