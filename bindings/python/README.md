@@ -34,7 +34,7 @@ produced by the release workflow when published to PyPI.
 from embeddedmq import Runtime
 
 rt = Runtime()
-q = rt.create_queue("demo", capacity=64)
+q = rt.create_queue("demo", 64)
 q.push(b"hello")
 msg = q.pop()
 assert msg.data() == b"hello"

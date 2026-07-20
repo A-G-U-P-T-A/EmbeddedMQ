@@ -6,7 +6,7 @@ Minimal Maven app that depends on the published Central artifact:
 <dependency>
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <version>1.0.0-beta.2</version>
+  <version>1.0.0-beta.3</version>
 </dependency>
 ```
 

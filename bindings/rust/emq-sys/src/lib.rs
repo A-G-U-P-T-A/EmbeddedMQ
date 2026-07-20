@@ -25,16 +25,35 @@ pub const EMQ_MSG_FLAG_BORROWED: u32 = 0x2000_0000;
 pub const EMQ_MSG_FLAG_CLAIMED: u32 = 0x1000_0000;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct emq_message {
     pub id: u64,
     pub offset: u64,
     pub priority: u32,
+    _pad0: u32,
     pub deliver_at_ns: u64,
     pub ttl_ns: u64,
     pub data: *const c_void,
     pub size: usize,
     pub flags: u32,
+    _pad1: u32,
+}
+
+impl Default for emq_message {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            offset: 0,
+            priority: 0,
+            _pad0: 0,
+            deliver_at_ns: 0,
+            ttl_ns: 0,
+            data: std::ptr::null(),
+            size: 0,
+            flags: 0,
+            _pad1: 0,
+        }
+    }
 }
 
 #[repr(C)]
