@@ -1,69 +1,10 @@
-# EmbeddedMQ — Embedded Messaging Runtime
+# EmbeddedMQ
 
 [![CI](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/ci.yml/badge.svg)](https://github.com/A-G-U-P-T-A/EmbeddedMQ/actions/workflows/ci.yml)
 
-One engine. Many APIs.
+**In-process messaging for C applications** — queues, pub/sub, and work delivery inside your process. No broker, no daemon, no network hop.
 
-An embeddable, ultra-low-latency messaging runtime that links into your process.
-No broker. No daemon. No Docker.
-
-```
-Storage          Routing           Concurrency
-✓ Durable Queue  ✓ Pub/Sub         ✓ Lock-free SPSC/MPMC rings
-✓ Streams        ✓ Fanout (refs)   ✓ Active-queue scheduler
-✓ Delay / Work   ✓ Replay / DLQ    ✓ Timing wheel
-✓ Memory / Hybrid✓ Consumer groups ✓ Epoch reclamation
-✓ Snapshots      ✓ Wildcards       ✓ Futex / WaitOnAddress
-```
-
-## Engine v2 highlights
-
-- **Lock-free FAST FIFO** — Aeron-style log-buffer rings; SPSC skips per-queue mutexes
-- **Active-queue scheduler** — hierarchical bitmaps + ready rings; workers never scan queues
-- **Size-class page pools** — 64B…64KB magazines; malloc is a fallback, not the hot path
-- **Policy engine** — ordering × delivery × backpressure × timing × storage
-- **Backpressure modes** — drop-new/old, block, spill, expand, overwrite
-- **32B record headers (v3)** + 256B inline / pool / blob payload tiers
-- **CPU dispatch** — runtime CRC32C / ISA feature table (simdjson-style)
-- **NUMA-ready domains** — single domain today; seams for per-node pools/schedulers
-- **Event loop** — `emq_poll` / `emq_wait` / `emq_run_once` / `emq_run` for games & embedded
-- **Stackless tasks** — protothread-style `EMQ_TASK_*` substrate
-- **Observability** — latency histograms, allocator + scheduler stats, CSV baselines
-
-## Build
-
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Windows (VS Developer shell):
-
-```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-```
-
-Options: `EMQ_BUILD_TESTS`, `EMQ_BUILD_BENCH`, `EMQ_BUILD_EXAMPLES`,
-`EMQ_BUILD_STRESS`, `EMQ_FAULT_INJECT`, `EMQ_SANITIZE`, `EMQ_ASAN`,
-`EMQ_ENABLE_SANITIZERS`, `EMQ_WITH_LZ4`, `EMQ_WITH_ZSTD`.
-
-Robustness suites (stress / fuzz / fault / recovery / soak / difftest / model)
-and sanitizer / perf-regression scripts: see [docs/TESTING.md](docs/TESTING.md).
-Full catalog of every test: [docs/TESTS.md](docs/TESTS.md).
-
-GitHub Actions: `.github/workflows/ci.yml` (push/PR matrix) and `nightly.yml`
-(long stress/fuzz/difftest/recovery/soak). Workflows are inert until the repo
-is pushed; replace `OWNER` in the badge above with your GitHub org/user.
-
-```powershell
-.\scripts\run_all.ps1 -Configure -FaultInject
-.\scripts\perf_check.ps1
-.\scripts\sanitize.ps1          # WSL Clang ASan+UBSan
-```
-
-## Quick start
+Link the library. Create a runtime. Push and pop messages.
 
 ```c
 emq_runtime *rt;
@@ -79,42 +20,164 @@ opts.consumers = 1;
 emq_queue_create(rt, "jobs", &opts, &q);
 
 emq_push(q, "hello", 5, NULL);
-emq_pop(q, &m, 1000);
+emq_pop(q, &m, 1000);          /* owns m.data — must release */
 emq_message_release(&m);
+
+emq_queue_close(q);
 emq_runtime_destroy(rt);
 ```
+
+---
+
+## What it is
+
+EmbeddedMQ is a **C11 messaging runtime** you embed in your binary. It replaces “stand up Redis/Rabbit/Kafka for local IPC” when producers and consumers already share an address space.
+
+| You get | You do not get |
+| ------- | -------------- |
+| Lock-free FAST queues (SPSC / MPMC) | Multi-host clustering |
+| Durable / mmap / hybrid storage | Distributed transactions |
+| Pub/sub with wildcards & groups | A network protocol |
+| Work queues (ack / nack / visibility) | SQL or query language |
+| Backpressure, delay, ring, stream policies | Language bindings (C API today) |
+| In-process event loop & stackless tasks | A standalone server process |
+
+**Who it’s for:** games, embedded hosts, simulators, local pipelines, and services that need many queues with low latency inside one process.
+
+Deeper product explanation: [docs/overview.md](docs/overview.md).
+
+---
+
+## Requirements
+
+- C11 compiler (MSVC, GCC, or Clang)
+- CMake 3.16+
+- Optional: Ninja (recommended)
+
+Supported platforms: **Windows**, **Linux**, **macOS**.
+
+---
+
+## Build
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Windows (VS Developer PowerShell / `msvc-dev-cmd`):
+
+```powershell
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+### Useful CMake options
+
+| Option | Default | Purpose |
+| ------ | ------- | ------- |
+| `EMQ_BUILD_TESTS` | ON | Unit / integration tests |
+| `EMQ_BUILD_EXAMPLES` | ON | `examples/` demos |
+| `EMQ_BUILD_BENCH` | ON | Benchmarks |
+| `EMQ_BUILD_STRESS` | OFF | Stress / fuzz / soak suites |
+| `EMQ_FAULT_INJECT` | OFF | Fault-injection builds |
+| `EMQ_SANITIZE` | — | `address`, `undefined`, `thread` (Clang/GCC) |
+
+Artifacts of interest after build:
+
+- `build/libemq.a` (or `.lib`) — static library
+- `include/emq/` — public headers
+- `build/examples/emq_producer_consumer`
+- `build/examples/emq_pubsub_demo`
+
+---
+
+## Use in your project
+
+### CMake
+
+```cmake
+add_subdirectory(path/to/EmbeddedMQ)
+target_link_libraries(your_app PRIVATE emq)
+```
+
+### Manual
+
+```bash
+cc -Iinclude your_app.c -Lbuild -lemq -lpthread -o your_app   # Linux/macOS
+```
+
+Public API: [`include/emq/emq.h`](include/emq/emq.h) · types: [`include/emq/emq_types.h`](include/emq/emq_types.h).
+
+**Ownership rule:** successful `emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer `message.data` to you. Always call `emq_message_release(&m)`.
+
+---
+
+## Concepts (short)
+
+1. **Runtime** — process-wide engine (`emq_runtime_create`). Optionally starts worker threads.
+2. **Queue** — named endpoint with storage mode, policy, capacity, and backpressure.
+3. **Message** — id, payload (`data`/`size`), optional priority / delay / TTL.
+4. **Subscription** — pub/sub consumer over a topic pattern (optional consumer group).
+
+| Storage | Meaning |
+| ------- | ------- |
+| `EMQ_STORAGE_FAST` | RAM, lock-free rings when SPSC-capable |
+| `EMQ_STORAGE_DURABLE` | Append log on disk |
+| `EMQ_STORAGE_MMAP` | Memory-mapped segments |
+| `EMQ_STORAGE_HYBRID` | Hot RAM + durable spill |
+| `EMQ_STORAGE_RING` | Fixed-size overwrite ring |
+| `EMQ_STORAGE_STREAM` | Offset / replay oriented |
+
+| Policy | Meaning |
+| ------ | ------- |
+| `FIFO` / `LIFO` | Ordering |
+| `PRIORITY` | Higher priority first |
+| `WORK` | Visibility timeout + ack/nack |
+| `RING` | Bounded overwrite |
+| `PUBSUB` / `BROADCAST` | Fanout |
+| `DELAY` | Deliver-at scheduling |
+
+Hints `producers=1` and `consumers=1` enable the SPSC FAST path.
+
+---
+
+## Examples
+
+```bash
+./build/examples/emq_producer_consumer
+./build/examples/emq_pubsub_demo
+```
+
+More detail and API walkthrough: [docs/getting-started.md](docs/getting-started.md).
+
+---
 
 ## Benchmarks
 
 ```bash
 ./build/bench/emq_bench_load --quick
-./build/bench/emq_bench_load --quick --csv out.csv --baseline baseline.csv
 ./build/bench/emq_bench_compare --ops 100000 --payload 64
 ```
 
-Reports ops/s, p50/p99/p99.9/p99.99, RSS, CPU, context switches.
+Reports throughput, latency percentiles, and process metrics.
 
-### Where we win / don't
+---
 
-| Win | Don't (yet) |
-|-----|-------------|
-| In-process queues & work steeling | Multi-host networking |
-| 1…100k queues in one address space | Exactly-once distributed txns |
-| Pub/sub fanout without payload copies | SQL query engine |
-| Games / embedded event loops | io_uring / full NUMA binding |
+## Documentation
 
-Honest comparisons live in `bench/compare/` (mutex+list baseline today;
-SQLite/LMDB harnesses can plug into the same metrics layer).
+| Doc | Contents |
+| --- | -------- |
+| [docs/overview.md](docs/overview.md) | What EmbeddedMQ is, architecture, fit |
+| [docs/getting-started.md](docs/getting-started.md) | Install, first queue, pub/sub, work queues |
+| [`include/emq/emq.h`](include/emq/emq.h) | Full C API |
 
-## Public API
-
-See [`include/emq/emq.h`](include/emq/emq.h).
-
-`emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer
-`message.data` ownership — release with `emq_message_release()`.
+---
 
 ## Status
 
-Engine v2 rebuild of the concurrency, memory, scheduler, and measurement planes.
-Durable storage, routing, and policies remain fully supported; the FAST path is
-the performance spearhead.
+Active C runtime with CI on Windows / Linux / macOS (MSVC, GCC, Clang), plus ASan/UBSan and TSan jobs. The FAST path is the performance focus; durable storage and routing are supported.
+
+Not a network message broker. If you need cross-machine delivery, put a transport beside EmbeddedMQ — don’t expect one inside it.
