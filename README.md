@@ -175,6 +175,13 @@ Language clients live under [`bindings/`](bindings/). See each subdirectory for 
 
 ---
 
+## Releases / clients
+
+GitHub Releases tag client + core snapshots (see [CHANGELOG.md](CHANGELOG.md)).
+**1.0.0-beta** ships binding *scaffolds* that still need a local `libemq` build.
+How SQLite gets into apps (amalgamation / bundled source / wheels) and how we
+plan to match that is documented in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
+
 ## Website
 
 The project site is a static page in [`site/`](site/), deployed by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) to GitHub Pages:

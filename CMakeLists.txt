@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(EmbeddedMQ_Monorepo VERSION 0.1.0 LANGUAGES C)
+project(EmbeddedMQ_Monorepo VERSION 1.0.0 LANGUAGES C)
 
 option(EMQ_BUILD_TRANSPORT "Build transport plane (ipc + net)" OFF)
 

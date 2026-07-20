@@ -1,6 +1,6 @@
 # Language bindings
 
-Stable contract: the C ABI exported by `libemq` (`core/include/emq/emq.h`).
+**Version:** `1.0.0-beta` · Stable contract: C ABI in `core/include/emq/emq.h`.
 
 | Directory | Status | Technology | Notes |
 | --------- | ------ | ---------- | ----- |
@@ -9,6 +9,10 @@ Stable contract: the C ABI exported by `libemq` (`core/include/emq/emq.h`).
 | [`python/`](python/) | scaffold | CPython C-extension | `embeddedmq` package, `EMQ_ROOT` / `EMQ_LIB_DIR` |
 | [`go/`](go/) | scaffold | cgo | `EMQ_INCLUDE` / `EMQ_LIB` env vars |
 | [`java/`](java/) | scaffold | Panama FFM (JDK 21+) | Not JNI; `SymbolLookup.libraryLookup` |
+
+> **Beta note:** clients still link a **prebuilt** `libemq`. They do not yet
+> vendor/compile the engine like SQLite’s amalgamation. See
+> [docs/DISTRIBUTION.md](../docs/DISTRIBUTION.md).
 
 ## Quick start
 
