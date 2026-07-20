@@ -181,20 +181,14 @@ impl<'rt> Queue<'rt> {
     }
 
     pub fn pop(&self, timeout: Option<Duration>) -> Result<Message> {
-        let mut msg = emq_message {
-            data: ptr::null(),
-            ..Default::default()
-        };
+        let mut msg = emq_message::default();
         let ms = timeout.map(|d| d.as_millis() as u32).unwrap_or(0);
         check(unsafe { emq_pop(self.raw, &mut msg, ms) })?;
         Ok(Message { inner: msg })
     }
 
     pub fn try_pop(&self) -> Result<Option<Message>> {
-        let mut msg = emq_message {
-            data: ptr::null(),
-            ..Default::default()
-        };
+        let mut msg = emq_message::default();
         let status = unsafe { emq_sys::emq_try_pop(self.raw, &mut msg) };
         match status {
             EMQ_OK => Ok(Some(Message { inner: msg })),

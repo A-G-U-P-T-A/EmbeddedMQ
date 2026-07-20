@@ -306,13 +306,19 @@ jobs:
         working-directory: bindings/rust
         run: |
           set -euo pipefail
-          cargo publish -p emq-sys --allow-dirty
-          # Index can lag; retry emq until emq-sys is visible.
+          # Tolerate "already uploaded" on retries / partial prior runs.
+          cargo publish -p emq-sys --allow-dirty 2>&1 | tee /tmp/emq-sys-publish.log || {
+            grep -qiE 'already exists|already been uploaded' /tmp/emq-sys-publish.log
+          }
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            if cargo publish -p emq --allow-dirty; then
+            if cargo publish -p emq --allow-dirty 2>&1 | tee /tmp/emq-publish.log; then
               exit 0
             fi
-            echo "emq publish attempt $i failed; waiting for emq-sys index..."
+            if grep -qiE 'already exists|already been uploaded' /tmp/emq-publish.log; then
+              echo "emq already on crates.io"
+              exit 0
+            fi
+            echo "emq publish attempt $i failed; waiting for index..."
             sleep 30
           done
           exit 1
