@@ -203,12 +203,14 @@ def main() -> int:
         shutil.rmtree(NATIVE)
     staging.rename(NATIVE)
 
-    # Python setuptools forbids parent (`..`) paths in Extension sources.
-    # Keep a vendored copy inside the Python package tree for pip/sdist.
-    py_native = ROOT / "bindings" / "python" / "native"
-    if py_native.exists():
-        shutil.rmtree(py_native)
-    shutil.copytree(NATIVE, py_native)
+    # Vendor into language package trees (pip / crates.io require in-tree sources).
+    for dest in (
+        ROOT / "bindings" / "python" / "native",
+        ROOT / "bindings" / "rust" / "emq-sys" / "native",
+    ):
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(NATIVE, dest)
 
     # Go cgo only compiles .c files in the package directory (not subdirs).
     # Emit one wrapper per TU: zz_<path>.c -> #include "../native/src/..."
@@ -226,7 +228,7 @@ def main() -> int:
         (go_dir / flat).write_text(wrapper, encoding="utf-8")
 
     print(f"synced bindings/native (engine {version}, {len(EMQ_SOURCES)} sources)")
-    print(f"vendored copy -> {py_native.relative_to(ROOT)}")
+    print("vendored -> bindings/python/native, bindings/rust/emq-sys/native")
     print(f"go wrappers  -> bindings/go/zz_*.c ({len(EMQ_SOURCES)} files)")
     return 0
 

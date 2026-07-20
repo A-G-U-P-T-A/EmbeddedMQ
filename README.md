@@ -177,10 +177,13 @@ Language clients live under [`bindings/`](bindings/). See each subdirectory for 
 
 ## Releases / clients
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
-Language clients under [`bindings/`](bindings/) bundle the C engine so typical
-installs do not need a separate `libemq` build (Rust/Python/Go compile from
-vendored sources; Java loads OS-specific natives from the JAR).
+See [CHANGELOG.md](CHANGELOG.md), [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md),
+and [docs/PUBLISHING.md](docs/PUBLISHING.md).
+
+Clients under [`bindings/`](bindings/) bundle the C engine. Tag `v*` runs
+`Release bindings` → GitHub Release assets, and publishes to **PyPI / Maven
+Central / crates.io** when those secrets are configured. Go uses a nested tag
+`bindings/go/v…` for the module proxy.
 
 ## Website
 

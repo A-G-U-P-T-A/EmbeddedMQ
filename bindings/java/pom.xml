@@ -5,7 +5,11 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.embeddedmq</groupId>
+  <!--
+    Default groupId verifies via GitHub on Sonatype Central Portal.
+    Switch to io.embeddedmq after claiming that namespace (needs domain proof).
+  -->
+  <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
   <version>1.0.0-beta.1</version>
   <packaging>jar</packaging>

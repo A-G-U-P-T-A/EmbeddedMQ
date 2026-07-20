@@ -5,7 +5,12 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     // emq-sys -> rust -> bindings
     let bindings_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let native = bindings_root.join("native");
+    // Prefer crate-local native/ (crates.io); fall back to monorepo bindings/native.
+    let native = if manifest_dir.join("native").join("sources.txt").is_file() {
+        manifest_dir.join("native")
+    } else {
+        bindings_root.join("native")
+    };
 
     println!("cargo:rerun-if-env-changed=EMQ_LIB_DIR");
     println!("cargo:rerun-if-env-changed=EMQ_INCLUDE_DIR");

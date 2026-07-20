@@ -55,7 +55,7 @@ try (Emq rt = new Emq()) {
 ```xml
 <!-- after Maven Central publish -->
 <dependency>
-  <groupId>io.embeddedmq</groupId>
+  <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
   <version>1.0.0-beta.1</version>
 </dependency>

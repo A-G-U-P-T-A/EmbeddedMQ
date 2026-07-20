@@ -2,9 +2,14 @@
 name = "emq"
 version = "1.0.0-beta.1"
 edition = "2021"
-description = "Safe Rust wrapper for EmbeddedMQ"
+description = "Safe Rust bindings for EmbeddedMQ"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/A-G-U-P-T-A/EmbeddedMQ"
+homepage = "https://a-g-u-p-t-a.github.io/EmbeddedMQ/"
+documentation = "https://docs.rs/emq"
+readme = "../README.md"
+keywords = ["embeddedmq", "queue", "messaging"]
+categories = ["concurrency", "api-bindings"]
 
 [dependencies]
-emq-sys = { path = "../emq-sys" }
-
-[dev-dependencies]
+emq-sys = { version = "1.0.0-beta.1", path = "../emq-sys" }
