@@ -12,9 +12,16 @@ extern "C" {
 #define EMQ_NAME_MAX 128u
 #define EMQ_TOPIC_MAX 256u
 
-/* Public message.flags bits (library-owned range 0x80000000..). */
-#define EMQ_MSG_FLAG_BORROWED 0x80000000u /* peek: do not free data */
-#define EMQ_MSG_FLAG_CLAIMED 0x40000000u  /* zero-copy claim into ring */
+/*
+ * Public message.flags bits (library-owned high range).
+ * RETRY / DEAD_LETTER are set by the router on redelivered messages.
+ * BORROWED / CLAIMED are ownership markers for peek/claim (do not free).
+ * These must not overlap — release uses BORROWED|CLAIMED to skip free.
+ */
+#define EMQ_MSG_FLAG_RETRY       0x80000000u
+#define EMQ_MSG_FLAG_DEAD_LETTER 0x40000000u
+#define EMQ_MSG_FLAG_BORROWED    0x20000000u /* peek: do not free data */
+#define EMQ_MSG_FLAG_CLAIMED     0x10000000u /* zero-copy claim into ring */
 
 typedef enum emq_status {
   EMQ_OK = 0,

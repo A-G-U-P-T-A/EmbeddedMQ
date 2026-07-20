@@ -19,8 +19,10 @@ pub const EMQ_ERR_CLOSED: emq_status = -9;
 pub const EMQ_ERR_BUSY: emq_status = -10;
 pub const EMQ_ERR_UNSUPPORTED: emq_status = -11;
 
-pub const EMQ_MSG_FLAG_BORROWED: u32 = 0x8000_0000;
-pub const EMQ_MSG_FLAG_CLAIMED: u32 = 0x4000_0000;
+pub const EMQ_MSG_FLAG_RETRY: u32 = 0x8000_0000;
+pub const EMQ_MSG_FLAG_DEAD_LETTER: u32 = 0x4000_0000;
+pub const EMQ_MSG_FLAG_BORROWED: u32 = 0x2000_0000;
+pub const EMQ_MSG_FLAG_CLAIMED: u32 = 0x1000_0000;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]

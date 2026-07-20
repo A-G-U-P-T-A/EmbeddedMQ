@@ -40,13 +40,13 @@ int main(void) {
   EMQ_CHECK_EQ(emq_sub_retry(independent, "retry.orders", first_id, 2, 0),
                EMQ_OK);
   EMQ_CHECK_EQ(emq_sub_next(retry, &message, 0), EMQ_OK);
-  EMQ_CHECK((message.flags & 0x80000000u) != 0);
+  EMQ_CHECK((message.flags & EMQ_MSG_FLAG_RETRY) != 0);
   emq_message_release(&message);
 
   EMQ_CHECK_EQ(emq_sub_dead_letter(independent, "dlq.orders", first_id, 3),
                EMQ_OK);
   EMQ_CHECK_EQ(emq_sub_next(dlq, &message, 0), EMQ_OK);
-  EMQ_CHECK((message.flags & 0x40000000u) != 0);
+  EMQ_CHECK((message.flags & EMQ_MSG_FLAG_DEAD_LETTER) != 0);
   emq_message_release(&message);
 
   EMQ_CHECK_EQ(emq_sub_replay(independent), EMQ_OK);

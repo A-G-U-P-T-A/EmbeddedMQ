@@ -61,8 +61,13 @@ EMQ_STATIC_ASSERT(EMQ_BP_MODE_SPILL == 3, bp_spill);
 EMQ_STATIC_ASSERT(EMQ_BP_MODE_EXPAND == 4, bp_expand);
 EMQ_STATIC_ASSERT(EMQ_BP_MODE_OVERWRITE == 5, bp_overwrite);
 
-EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_BORROWED == 0x80000000u, flag_borrowed);
-EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_CLAIMED == 0x40000000u, flag_claimed);
+EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_RETRY == 0x80000000u, flag_retry);
+EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_DEAD_LETTER == 0x40000000u, flag_dead_letter);
+EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_BORROWED == 0x20000000u, flag_borrowed);
+EMQ_STATIC_ASSERT(EMQ_MSG_FLAG_CLAIMED == 0x10000000u, flag_claimed);
+EMQ_STATIC_ASSERT((EMQ_MSG_FLAG_BORROWED & EMQ_MSG_FLAG_RETRY) == 0, flag_no_overlap_retry);
+EMQ_STATIC_ASSERT((EMQ_MSG_FLAG_CLAIMED & EMQ_MSG_FLAG_DEAD_LETTER) == 0,
+                  flag_no_overlap_dlq);
 
 #if defined(_WIN64) || defined(__x86_64__) || defined(__aarch64__) || \
     (defined(__LP64__) && __LP64__)

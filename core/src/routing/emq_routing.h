@@ -13,9 +13,10 @@ extern "C" {
 /*
  * Route flags are returned in emq_message.flags.  The low bits carry the
  * retry attempt for messages routed through emq_router_retry().
+ * Aliases of the public EMQ_MSG_FLAG_* values (must stay in sync).
  */
-#define EMQ_ROUTE_FLAG_RETRY       0x80000000u
-#define EMQ_ROUTE_FLAG_DEAD_LETTER 0x40000000u
+#define EMQ_ROUTE_FLAG_RETRY       EMQ_MSG_FLAG_RETRY
+#define EMQ_ROUTE_FLAG_DEAD_LETTER EMQ_MSG_FLAG_DEAD_LETTER
 #define EMQ_ROUTE_ATTEMPT_MASK     0x0000FFFFu
 
 typedef struct emq_router emq_router;
