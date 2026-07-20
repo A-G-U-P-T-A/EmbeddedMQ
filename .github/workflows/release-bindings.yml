@@ -1,14 +1,5 @@
-# Build + publish language clients.
-#
-# Tags:
-#   v*                      → GitHub Release + PyPI / Maven / crates (if secrets set)
-#   bindings/go/v*          → Go module proxy only (no workflow needed; tag is enough)
-#
-# Secrets (Settings → Secrets → Actions):
-#   PYPI_API_TOKEN
-#   MAVEN_USERNAME, MAVEN_PASSWORD, GPG_PRIVATE_KEY, GPG_PASSPHRASE
-#   CARGO_REGISTRY_TOKEN
-#
+# Build + publish language clients on tag v* (or workflow_dispatch).
+# Secrets: MAVEN_*, GPG_*, PYPI_API_TOKEN, CARGO_REGISTRY_TOKEN
 # See docs/PUBLISHING.md
 
 name: Release bindings
@@ -24,7 +15,7 @@ permissions:
 
 concurrency:
   group: release-bindings-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync-native:
@@ -34,8 +25,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Sync bundled native sources
-        run: python scripts/sync_native.py
+      - run: python scripts/sync_native.py
       - uses: actions/upload-artifact@v4
         with:
           name: native-sources
@@ -56,9 +46,6 @@ jobs:
           - os: macos-latest
             artifact_os: macos
             artifact_arch: aarch64
-          - os: macos-13
-            artifact_os: macos
-            artifact_arch: x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -85,20 +72,22 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release -DEMQ_BUILD_SHARED=ON
           fi
           cmake --build build-native --config Release --parallel
-          mkdir -p "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}"
+          DEST="out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}"
+          mkdir -p "$DEST"
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp -f build-native/emq.dll \
-              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/emq.dll" \
-              || cp -f build-native/Release/emq.dll \
-              "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/emq.dll"
+            DLL=$(find build-native -name 'emq.dll' | head -1)
+            test -n "$DLL"
+            cp -f "$DLL" "$DEST/emq.dll"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            LIB=$(ls build-native/libemq*.dylib | head -1)
-            cp -f "$LIB" "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.dylib"
+            LIB=$(find build-native -name 'libemq*.dylib' | head -1)
+            test -n "$LIB"
+            cp -f "$LIB" "$DEST/libemq.dylib"
           else
-            LIB=$(ls build-native/libemq.so* | head -1)
-            cp -f "$LIB" "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}/libemq.so"
+            LIB=$(find build-native -name 'libemq.so*' -type f | head -1)
+            test -n "$LIB"
+            cp -f "$LIB" "$DEST/libemq.so"
           fi
-          ls -la "out/native/${{ matrix.artifact_os }}/${{ matrix.artifact_arch }}"
+          ls -la "$DEST"
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.artifact_os }}-${{ matrix.artifact_arch }}
@@ -106,6 +95,8 @@ jobs:
 
   package-java:
     needs: native
+    # Proceed even if one platform native failed (fat JAR gets whatever built).
+    if: always() && needs.native.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,17 +109,19 @@ jobs:
           pattern: native-*
           path: _natives
           merge-multiple: true
+          if-no-files-found: error
       - name: Stage resources + package JAR
         run: |
           set -euo pipefail
+          test -d _natives/native
           mkdir -p bindings/java/src/main/resources
+          rm -rf bindings/java/src/main/resources/native
           cp -a _natives/native bindings/java/src/main/resources/
           find bindings/java/src/main/resources/native -type f -print
           cd bindings/java
           mvn -B -q package -DskipTests
           mkdir -p ../../dist
           cp target/embeddedmq-*.jar ../../dist/
-          # Keep staged tree for Maven Central deploy job
           tar -czf ../../dist/java-project.tgz \
             -C ../.. \
             bindings/java/pom.xml \
@@ -166,37 +159,6 @@ jobs:
           name: python-sdist
           path: dist/*.tar.gz
 
-  wheels:
-    needs: sync-native
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-sources
-          path: bindings/native
-      - name: Vendor native into Python package
-        shell: bash
-        run: |
-          rm -rf bindings/python/native
-          cp -a bindings/native bindings/python/native
-      - uses: pypa/cibuildwheel@v2.22.0
-        with:
-          package-dir: bindings/python
-          output-dir: wheelhouse
-        env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
-          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
-          CIBW_ARCHS_MACOS: "arm64"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-
   smoke-bundled:
     needs: sync-native
     runs-on: ubuntu-latest
@@ -212,17 +174,19 @@ jobs:
       - name: Python + Go smoke
         run: |
           set -euo pipefail
-          python -m pip install -U pip
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -U pip
           rm -rf bindings/python/native
           cp -a bindings/native bindings/python/native
-          python -m pip install ./bindings/python
+          pip install ./bindings/python
           python -c 'import embeddedmq; print("python ok")'
           cd bindings/go && CGO_ENABLED=1 go build ./...
           echo go ok
 
   publish-github-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native, package-java, package-python, wheels, smoke-bundled]
+    needs: [package-java, package-python]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -233,16 +197,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find _artifacts -type f \( -name '*.jar' -o -name '*.tar.gz' -o -name '*.whl' -o -name '*.so' -o -name '*.dll' -o -name '*.dylib' \) -print
-          find _artifacts -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -exec cp {} release-assets/ \; || true
-          find _artifacts -type f -name '*.tar.gz' -exec cp {} release-assets/ \; || true
-          find _artifacts -type f -name '*.whl' -exec cp {} release-assets/ \; || true
+          find _artifacts -type f \( -name '*.jar' -o -name '*.tar.gz' -o -name '*.whl' \) \
+            ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name 'java-project.tgz' \
+            -exec cp {} release-assets/ \; || true
           for d in _artifacts/native-*; do
             [[ -d "$d" ]] || continue
             base=$(basename "$d")
             (cd "$d" && zip -r "../../release-assets/${base}.zip" .) || true
           done
           ls -la release-assets
+          test "$(ls -A release-assets)"
       - uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
@@ -251,19 +215,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  publish-maven:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package-java]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: java-jar
+          path: _java
+      - name: Restore staged Java project with natives
+        run: |
+          set -euo pipefail
+          tar -xzf _java/java-project.tgz
+          find bindings/java/src/main/resources/native -type f -print
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      - name: Deploy to Maven Central
+        working-directory: bindings/java
+        run: mvn -B -Pcentral deploy -DskipTests
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
   publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package-python, wheels, smoke-bundled]
+    needs: [package-python, smoke-bundled]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: _artifacts
-      - name: Collect dist
-        run: |
-          mkdir -p dist
-          find _artifacts -type f \( -name '*.whl' -o -name '*.tar.gz' \) -exec cp {} dist/ \;
-          ls -la dist
+          name: python-sdist
+          path: dist
       - name: Publish to PyPI
         if: ${{ env.PYPI_API_TOKEN != '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -277,47 +269,7 @@ jobs:
         if: ${{ env.PYPI_API_TOKEN == '' }}
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: echo "PYPI_API_TOKEN not set — skipping PyPI publish (see docs/PUBLISHING.md)"
-
-  publish-maven:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [package-java, smoke-bundled]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: java-jar
-          path: _java
-      - name: Restore staged Java project with natives
-        run: |
-          set -euo pipefail
-          tar -xzf _java/java-project.tgz
-          ls -la bindings/java/src/main/resources/native || true
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          server-id: central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
-      - name: Deploy to Maven Central
-        if: ${{ env.MAVEN_USERNAME != '' && env.GPG_PRIVATE_KEY != '' }}
-        working-directory: bindings/java
-        run: mvn -B -Pcentral deploy -DskipTests
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      - name: Skip Maven Central
-        if: ${{ env.MAVEN_USERNAME == '' || env.GPG_PRIVATE_KEY == '' }}
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-        run: echo "Maven secrets not set — skipping Central publish (see docs/PUBLISHING.md)"
+        run: echo "PYPI_API_TOKEN not set — skip"
 
   publish-crates:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -329,18 +281,16 @@ jobs:
         with:
           name: native-sources
           path: bindings/native
-      - name: Vendor native into emq-sys
-        run: |
+      - run: |
           rm -rf bindings/rust/emq-sys/native
           cp -a bindings/native bindings/rust/emq-sys/native
       - uses: dtolnay/rust-toolchain@stable
-      - name: Publish emq-sys then emq
+      - name: Publish crates
         if: ${{ env.CARGO_REGISTRY_TOKEN != '' }}
         working-directory: bindings/rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          set -euo pipefail
           cargo publish -p emq-sys --allow-dirty
           sleep 30
           cargo publish -p emq --allow-dirty
@@ -348,4 +298,4 @@ jobs:
         if: ${{ env.CARGO_REGISTRY_TOKEN == '' }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: echo "CARGO_REGISTRY_TOKEN not set — skipping crates.io (see docs/PUBLISHING.md)"
+        run: echo "CARGO_REGISTRY_TOKEN not set — skip"

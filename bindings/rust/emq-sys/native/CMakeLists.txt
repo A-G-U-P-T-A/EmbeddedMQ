@@ -44,22 +44,27 @@ set(EMQ_SOURCES
   src/api/emq.c
 )
 
+function(emq_configure_target tgt)
+  target_include_directories(${tgt} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  if(WIN32)
+    target_compile_definitions(${tgt} PRIVATE EMQ_PLATFORM_WINDOWS _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(${tgt} PUBLIC Synchronization)
+  elseif(APPLE)
+    target_compile_definitions(${tgt} PRIVATE EMQ_PLATFORM_POSIX _DARWIN_C_SOURCE)
+    find_package(Threads REQUIRED)
+    target_link_libraries(${tgt} PUBLIC Threads::Threads)
+  else()
+    target_compile_definitions(${tgt} PRIVATE EMQ_PLATFORM_POSIX _GNU_SOURCE)
+    find_package(Threads REQUIRED)
+    target_link_libraries(${tgt} PUBLIC Threads::Threads)
+  endif()
+endfunction()
+
 add_library(emq_static STATIC ${EMQ_SOURCES})
 set_target_properties(emq_static PROPERTIES OUTPUT_NAME emq)
-target_include_directories(emq_static PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(emq_static PRIVATE
-  $<$<BOOL:${WIN32}>:EMQ_PLATFORM_WINDOWS _CRT_SECURE_NO_WARNINGS>
-  $<$<AND:$<NOT:$<BOOL:${WIN32}>>,$<BOOL:${APPLE}>>:_DARWIN_C_SOURCE EMQ_PLATFORM_POSIX>
-  $<$<AND:$<NOT:$<BOOL:${WIN32}>>,$<NOT:$<BOOL:${APPLE}>>>:_GNU_SOURCE EMQ_PLATFORM_POSIX>)
-
-if(WIN32)
-  target_link_libraries(emq_static PUBLIC Synchronization)
-else()
-  find_package(Threads REQUIRED)
-  target_link_libraries(emq_static PUBLIC Threads::Threads)
-endif()
+emq_configure_target(emq_static)
 
 if(EMQ_BUILD_SHARED)
   add_library(emq SHARED ${EMQ_SOURCES})
@@ -67,30 +72,16 @@ if(EMQ_BUILD_SHARED)
     OUTPUT_NAME emq
     VERSION 1.0.0
     SOVERSION 0
-    C_VISIBILITY_PRESET hidden
     WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  target_include_directories(emq PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_compile_definitions(emq PUBLIC EMQ_BUILD_SHARED=1 PRIVATE EMQ_EXPORTS=1
-    $<$<BOOL:${WIN32}>:EMQ_PLATFORM_WINDOWS _CRT_SECURE_NO_WARNINGS>
-    $<$<AND:$<NOT:$<BOOL:${WIN32}>>,$<BOOL:${APPLE}>>:_DARWIN_C_SOURCE EMQ_PLATFORM_POSIX>
-    $<$<AND:$<NOT:$<BOOL:${WIN32}>>,$<NOT:$<BOOL:${APPLE}>>>:_GNU_SOURCE EMQ_PLATFORM_POSIX>)
-  if(WIN32)
-    target_link_libraries(emq PUBLIC Synchronization)
-  else()
-    target_link_libraries(emq PUBLIC Threads::Threads)
+  if(NOT MSVC)
+    set_target_properties(emq PROPERTIES C_VISIBILITY_PRESET hidden)
   endif()
+  target_compile_definitions(emq PUBLIC EMQ_BUILD_SHARED=1 PRIVATE EMQ_EXPORTS=1)
+  emq_configure_target(emq)
 endif()
 
-install(TARGETS emq_static
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin)
+install(TARGETS emq_static ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 if(EMQ_BUILD_SHARED)
-  install(TARGETS emq
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin)
+  install(TARGETS emq ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION bin)
 endif()
 install(DIRECTORY include/ DESTINATION include)
