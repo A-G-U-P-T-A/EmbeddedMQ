@@ -29,6 +29,9 @@ explicitly waived with rationale in the release notes.
 
 - [ ] `emq_bench_load --quick` within regression budget (see `scripts/perf_check.ps1`)
 - [ ] No unexpected hot-path regressions in LFQ/FIFO benchmarks
+- [ ] Binding gates in [`examples/loadtest/RELEASE_GATES.md`](../examples/loadtest/RELEASE_GATES.md):
+      median trials on Linux; scalar + batch % of C; `test_pop_into` green
+- [ ] Docs/examples promote `pop_into` / batch — not owning `Message`+`data()`
 
 ## Coverage
 

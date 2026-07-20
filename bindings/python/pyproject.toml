@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "embeddedmq"
-version = "1.0.0b1"
+version = "1.0.0b2"
 description = "Python bindings for EmbeddedMQ"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,9 +1,9 @@
 [package]
 name = "emq-sys"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 edition = "2021"
 description = "Raw FFI bindings to EmbeddedMQ (bundles C sources by default)"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/A-G-U-P-T-A/EmbeddedMQ"
 homepage = "https://a-g-u-p-t-a.github.io/EmbeddedMQ/"
 documentation = "https://docs.rs/emq-sys"

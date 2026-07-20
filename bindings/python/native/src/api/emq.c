@@ -313,6 +313,152 @@ emq_status emq_try_pop(emq_queue *q, emq_message *out) {
   return emq_pop(q, out, 0);
 }
 
+static int emq_try_pop_into_once(emq_queue *q, void *dst, size_t dst_cap,
+                                 size_t *out_size, emq_message *meta_opt) {
+  uint32_t len = 0;
+  uint64_t msg_id = 0;
+  uint32_t flags = 0;
+  uint32_t prio = 0;
+  int rc;
+
+  if (q->desc->lfq) {
+    rc = emq_fifo_pop_into(q->desc, dst,
+                           dst_cap > UINT32_MAX ? UINT32_MAX : (uint32_t)dst_cap,
+                           &len, &msg_id, &flags, &prio);
+  } else {
+    /* Non-LFQ policies: owning pop + copy (slower path). */
+    emq_message owned;
+    memset(&owned, 0, sizeof(owned));
+    rc = emq_prim_pop(q->desc, &owned, 0, q->rt->engine.wheel);
+    if (rc == 0) {
+      if (owned.size > dst_cap) {
+        emq_message_release(&owned);
+        return -1;
+      }
+      if (owned.data && owned.size > 0 && dst) {
+        memcpy(dst, owned.data, owned.size);
+      }
+      len = (uint32_t)owned.size;
+      msg_id = owned.id;
+      flags = owned.flags;
+      prio = owned.priority;
+      emq_message_release(&owned);
+    }
+  }
+
+  if (rc != 0) return rc;
+  if (out_size) *out_size = len;
+  if (meta_opt) {
+    memset(meta_opt, 0, sizeof(*meta_opt));
+    meta_opt->id = msg_id;
+    meta_opt->priority = prio;
+    meta_opt->flags = flags;
+    meta_opt->size = len;
+    meta_opt->data = NULL; /* caller owns dst */
+  }
+  return 0;
+}
+
+emq_status emq_pop_into(emq_queue *q, void *dst, size_t dst_cap,
+                        size_t *out_size, emq_message *meta_opt,
+                        uint32_t timeout_ms) {
+  uint64_t deadline;
+  int rc;
+  if (!q || !q->desc) return EMQ_ERR_INVALID;
+  if (!dst && dst_cap != 0) return EMQ_ERR_INVALID;
+  if (out_size) *out_size = 0;
+
+  deadline = timeout_ms == 0 ? 0
+                             : emq_now_ns() + (uint64_t)timeout_ms * 1000000ULL;
+
+  if (emq_desc_spsc_lfq(q->desc)) {
+    for (;;) {
+      uint64_t expect =
+          emq_atomic_load_u64((emq_atomic_u64 *)&q->desc->seq_wait);
+      rc = emq_try_pop_into_once(q, dst, dst_cap, out_size, meta_opt);
+      if (rc != -5) return emq_map_rc(rc);
+      if (timeout_ms == 0) return EMQ_ERR_EMPTY;
+      {
+        uint64_t now = emq_now_ns();
+        uint32_t wait_ms;
+        if (now >= deadline) return EMQ_ERR_TIMEOUT;
+        wait_ms = (uint32_t)(((deadline - now) + 999999ULL) / 1000000ULL);
+        if (wait_ms == 0) wait_ms = 1;
+        (void)emq_atomic_fetch_add_u64(&q->desc->waiters, 1);
+        (void)emq_wait_u64(&q->desc->seq_wait, expect, wait_ms);
+        (void)emq_atomic_fetch_add_u64(&q->desc->waiters, (uint64_t)-1);
+      }
+    }
+  }
+
+  emq_mutex_lock((emq_mutex *)q->desc->op_mu_opaque);
+  for (;;) {
+    rc = emq_try_pop_into_once(q, dst, dst_cap, out_size, meta_opt);
+    if (rc != -5) {
+      emq_mutex_unlock((emq_mutex *)q->desc->op_mu_opaque);
+      return emq_map_rc(rc);
+    }
+    if (timeout_ms == 0) {
+      emq_mutex_unlock((emq_mutex *)q->desc->op_mu_opaque);
+      return EMQ_ERR_EMPTY;
+    }
+    {
+      uint64_t now = emq_now_ns();
+      uint32_t wait_ms;
+      if (now >= deadline) {
+        emq_mutex_unlock((emq_mutex *)q->desc->op_mu_opaque);
+        return EMQ_ERR_TIMEOUT;
+      }
+      wait_ms = (uint32_t)(((deadline - now) + 999999ULL) / 1000000ULL);
+      if (wait_ms == 0) wait_ms = 1;
+      (void)emq_cond_timedwait((emq_cond *)q->desc->ready_cond_opaque,
+                               (emq_mutex *)q->desc->op_mu_opaque, wait_ms);
+    }
+  }
+}
+
+emq_status emq_push_n(emq_queue *q, const void *data, size_t size,
+                      size_t count, size_t *pushed) {
+  size_t i;
+  if (pushed) *pushed = 0;
+  if (!q || (!data && size != 0)) return EMQ_ERR_INVALID;
+  for (i = 0; i < count; ++i) {
+    emq_status st = emq_push(q, data, size, NULL);
+    if (st != EMQ_OK) {
+      if (pushed) *pushed = i;
+      return st;
+    }
+  }
+  if (pushed) *pushed = count;
+  return EMQ_OK;
+}
+
+emq_status emq_pop_into_n(emq_queue *q, void *dst, size_t msg_cap,
+                          size_t max_count, size_t *out_count,
+                          size_t *out_sizes_opt, uint32_t timeout_ms) {
+  size_t i;
+  unsigned char *p;
+  if (out_count) *out_count = 0;
+  if (!q || !q->desc) return EMQ_ERR_INVALID;
+  if (max_count == 0) return EMQ_OK;
+  if (!dst || msg_cap == 0) return EMQ_ERR_INVALID;
+
+  p = (unsigned char *)dst;
+  for (i = 0; i < max_count; ++i) {
+    size_t n = 0;
+    uint32_t to = (i == 0) ? timeout_ms : 0;
+    emq_status st =
+        emq_pop_into(q, p + i * msg_cap, msg_cap, &n, NULL, to);
+    if (st != EMQ_OK) {
+      if (out_count) *out_count = i;
+      return i != 0 ? EMQ_OK : st;
+    }
+    if (out_sizes_opt) out_sizes_opt[i] = n;
+  }
+  if (out_count) *out_count = max_count;
+  return EMQ_OK;
+}
+
 emq_status emq_peek(emq_queue *q, emq_message *out) {
   int rc;
   if (!q || !q->desc || !out) return EMQ_ERR_INVALID;

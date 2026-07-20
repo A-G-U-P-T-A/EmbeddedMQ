@@ -15,8 +15,6 @@ dependencies = [
 [[package]]
 name = "emq"
 version = "1.0.0-beta.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4868a749b043d0c313b93af93533920b1399c98fe268e756f4314cde1c6941d"
 dependencies = [
  "emq-sys",
 ]
@@ -31,8 +29,6 @@ dependencies = [
 [[package]]
 name = "emq-sys"
 version = "1.0.0-beta.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81551e95110c48f8a5c16e3e9ecde9e081b9f19f21e5c2eb4d64fa911aa1fe9c"
 dependencies = [
  "cc",
 ]

@@ -36,15 +36,27 @@ from embeddedmq import Runtime
 rt = Runtime()
 q = rt.create_queue("demo", 64)
 q.push(b"hello")
-msg = q.pop()
-assert msg.data() == b"hello"
+
+# Hot path: emq_pop_into into a reused buffer (no engine malloc)
+buf = bytearray(64)
+n = q.pop_copy(buf, 1000)
+
+# Throughput: emq_push_n + emq_pop_into_n
+# q.push_repeat(payload, 32)
+# got = q.pop_copy_n(batch_buf, msg_cap, 32)
+
+# Convenience (allocates):
+# msg = q.pop(); data = msg.data()
+
 q.close()
 ```
 
-`Message` calls `emq_message_release` when garbage-collected.
+Prefer `pop_copy` or batch APIs. `Message.data()` allocates every time.
 
 ## Optional: link a prebuilt libemq
 
 ```bash
 EMQ_SYSTEM_LIB=1 EMQ_LIB_DIR=/path/to/build pip install -e ./bindings/python
 ```
+
+Licensed under Apache-2.0 (see repo root `LICENSE`).

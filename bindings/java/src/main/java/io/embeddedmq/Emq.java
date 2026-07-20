@@ -22,13 +22,14 @@ import java.util.Objects;
  *   <li>Uses {@code invokeExact} (not {@code invokeWithArguments}).</li>
  *   <li>Marks short native calls as {@link Linker.Option#critical}.</li>
  *   <li>Reuses per-queue scratch segments for push/pop.</li>
- *   <li>{@link Queue#push(byte[])} / {@link Queue#popCopy(byte[], int)} avoid
- *       per-message Java object allocation.</li>
+ *   <li>{@link Queue#popCopy(byte[], int)} maps to {@code emq_pop_into}
+ *       (no engine malloc); batch via {@link Queue#popCopyN}.</li>
  * </ul>
  */
 public final class Emq implements AutoCloseable {
 
     public static final int EMQ_OK = 0;
+    public static final int EMQ_ERR_INVALID = -1;
     public static final int EMQ_ERR_FULL = -4;
     public static final int EMQ_ERR_EMPTY = -5;
     public static final int EMQ_ERR_TIMEOUT = -7;
@@ -108,6 +109,25 @@ public final class Emq implements AutoCloseable {
             FunctionDescriptor.of(ValueLayout.JAVA_INT,
                     ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
+    private static final MethodHandle MH_POP_INTO = downcallCritical(
+            "emq_pop_into",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+
+    private static final MethodHandle MH_PUSH_N = downcallCritical(
+            "emq_push_n",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
+
+    private static final MethodHandle MH_POP_INTO_N = downcallCritical(
+            "emq_pop_into_n",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                    ValueLayout.JAVA_INT));
+
     private static final MethodHandle MH_MESSAGE_RELEASE = downcallCritical(
             "emq_message_release",
             FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
@@ -146,6 +166,8 @@ public final class Emq implements AutoCloseable {
     public final class Queue implements AutoCloseable {
         private final MemorySegment handle;
         private final MemorySegment msgScratch = arena.allocate(MESSAGE);
+        private final MemorySegment sizeScratch = arena.allocate(ValueLayout.JAVA_LONG);
+        private final MemorySegment countScratch = arena.allocate(ValueLayout.JAVA_LONG);
         private MemorySegment pushScratch = MemorySegment.NULL;
         private long pushScratchCap;
         private boolean queueClosed;
@@ -178,28 +200,61 @@ public final class Emq implements AutoCloseable {
         }
 
         /**
-         * High-throughput pop: copy payload into {@code dst}, release native
-         * message, return byte length. Avoids Message allocation.
+         * High-throughput pop via {@code emq_pop_into}: copy into {@code dst}
+         * with no engine malloc. Returns byte length.
          */
         public int popCopy(byte[] dst, int timeoutMs) {
             Objects.requireNonNull(dst);
-            msgScratch.fill((byte) 0);
-            EmqException.check(invokePop(handle, msgScratch, timeoutMs));
-            try {
-                MemorySegment ptr = (MemorySegment) VH_MSG_DATA.get(msgScratch, 0L);
-                long size = (long) VH_MSG_SIZE.get(msgScratch, 0L);
-                if (ptr.address() == 0 || size <= 0) {
-                    return 0;
-                }
-                if (size > dst.length) {
-                    throw new IllegalArgumentException(
-                            "dst too small: need " + size + " have " + dst.length);
-                }
-                MemorySegment.copy(ptr.reinterpret(size), ValueLayout.JAVA_BYTE, 0, dst, 0, (int) size);
-                return (int) size;
-            } finally {
-                invokeMessageRelease(msgScratch);
+            MemorySegment heap = MemorySegment.ofArray(dst);
+            sizeScratch.set(ValueLayout.JAVA_LONG, 0, 0L);
+            int st = invokePopInto(handle, heap, dst.length, sizeScratch,
+                    MemorySegment.NULL, timeoutMs);
+            if (st == EMQ_ERR_INVALID) {
+                throw new IllegalArgumentException("dst too small for message");
             }
+            EmqException.check(st);
+            return (int) sizeScratch.get(ValueLayout.JAVA_LONG, 0);
+        }
+
+        /** Push the same payload {@code count} times via {@code emq_push_n}. */
+        public int pushRepeat(byte[] data, int count) {
+            Objects.requireNonNull(data);
+            if (count <= 0) {
+                return 0;
+            }
+            ensurePushScratch(data.length);
+            if (data.length > 0) {
+                MemorySegment.copy(data, 0, pushScratch, ValueLayout.JAVA_BYTE, 0, data.length);
+            }
+            countScratch.set(ValueLayout.JAVA_LONG, 0, 0L);
+            EmqException.check(invokePushN(handle,
+                    data.length == 0 ? MemorySegment.NULL : pushScratch,
+                    data.length, count, countScratch));
+            return (int) countScratch.get(ValueLayout.JAVA_LONG, 0);
+        }
+
+        /**
+         * Batch pop into a stride buffer via {@code emq_pop_into_n}.
+         * {@code dst.length >= msgCap * maxCount}.
+         */
+        public int popCopyN(byte[] dst, int msgCap, int maxCount) {
+            Objects.requireNonNull(dst);
+            if (maxCount <= 0) {
+                return 0;
+            }
+            if (msgCap <= 0 || dst.length < msgCap * maxCount) {
+                throw new IllegalArgumentException(
+                        "dst too small: need " + (msgCap * maxCount) + " have " + dst.length);
+            }
+            MemorySegment heap = MemorySegment.ofArray(dst);
+            countScratch.set(ValueLayout.JAVA_LONG, 0, 0L);
+            int st = invokePopIntoN(handle, heap, msgCap, maxCount, countScratch,
+                    MemorySegment.NULL, 0);
+            long got = countScratch.get(ValueLayout.JAVA_LONG, 0);
+            if (st != EMQ_OK && got == 0) {
+                EmqException.check(st);
+            }
+            return (int) got;
         }
 
         /** Compatibility API (allocates a Message wrapper). Prefer {@link #popCopy}. */
@@ -335,6 +390,36 @@ public final class Emq implements AutoCloseable {
     private static int invokePop(MemorySegment q, MemorySegment msg, int timeoutMs) {
         try {
             return (int) MH_POP.invokeExact(q, msg, timeoutMs);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokePopInto(
+            MemorySegment q, MemorySegment dst, long dstCap, MemorySegment outSize,
+            MemorySegment meta, int timeoutMs) {
+        try {
+            return (int) MH_POP_INTO.invokeExact(q, dst, dstCap, outSize, meta, timeoutMs);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokePushN(
+            MemorySegment q, MemorySegment data, long size, long count, MemorySegment pushed) {
+        try {
+            return (int) MH_PUSH_N.invokeExact(q, data, size, count, pushed);
+        } catch (Throwable t) {
+            throw wrap(t);
+        }
+    }
+
+    private static int invokePopIntoN(
+            MemorySegment q, MemorySegment dst, long msgCap, long maxCount,
+            MemorySegment outCount, MemorySegment outSizes, int timeoutMs) {
+        try {
+            return (int) MH_POP_INTO_N.invokeExact(
+                    q, dst, msgCap, maxCount, outCount, outSizes, timeoutMs);
         } catch (Throwable t) {
             throw wrap(t);
         }

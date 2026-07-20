@@ -1,9 +1,9 @@
 [package]
 name = "emq"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 edition = "2021"
 description = "Safe Rust bindings for EmbeddedMQ"
-license = "MIT"
+license = "Apache-2.0"
 repository = "https://github.com/A-G-U-P-T-A/EmbeddedMQ"
 homepage = "https://a-g-u-p-t-a.github.io/EmbeddedMQ/"
 documentation = "https://docs.rs/emq"
@@ -12,4 +12,4 @@ keywords = ["embeddedmq", "queue", "messaging"]
 categories = ["concurrency", "api-bindings"]
 
 [dependencies]
-emq-sys = { version = "1.0.0-beta.1", path = "../emq-sys" }
+emq-sys = { version = "1.0.0-beta.2", path = "../emq-sys" }

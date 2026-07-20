@@ -23,6 +23,10 @@ int emq_prim_seek(emq_queue_desc *q, uint64_t offset);
 /* Policy-specific helpers (also used directly by tests) */
 int emq_fifo_push(emq_queue_desc *q, const void *data, size_t size, const emq_message *meta);
 int emq_fifo_pop(emq_queue_desc *q, emq_message *out);
+/* Copy into caller buffer; no malloc. -1 if dst too small (not consumed). */
+int emq_fifo_pop_into(emq_queue_desc *q, void *dst, uint32_t dst_cap,
+                      uint32_t *out_len, uint64_t *out_id, uint32_t *out_flags,
+                      uint32_t *out_prio);
 int emq_priority_push(emq_queue_desc *q, const void *data, size_t size, const emq_message *meta);
 int emq_priority_pop(emq_queue_desc *q, emq_message *out);
 int emq_ring_push(emq_queue_desc *q, const void *data, size_t size, const emq_message *meta);

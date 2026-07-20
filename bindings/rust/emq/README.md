@@ -5,7 +5,7 @@ Bundles the C engine via [`emq-sys`](https://crates.io/crates/emq-sys) (no syste
 
 ```toml
 [dependencies]
-emq = "1.0.0-beta.1"
+emq = "1.0.0-beta.2"
 ```
 
 ```rust
@@ -22,10 +22,11 @@ fn main() -> emq::Result<()> {
         }),
     )?;
     q.push(b"hello")?;
-    let msg = q.pop(None)?;
-    println!("{}", String::from_utf8_lossy(msg.as_bytes()));
+    let mut buf = [0u8; 64];
+    let n = q.pop_into(&mut buf, None)?;
+    println!("{}", String::from_utf8_lossy(&buf[..n]));
     Ok(())
 }
 ```
 
-Needs a C toolchain (`cc` crate compiles the vendored engine).
+Needs a C toolchain (`cc` crate compiles the vendored engine). Licensed under Apache-2.0.

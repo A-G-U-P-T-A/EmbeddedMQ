@@ -1,9 +1,12 @@
 [package]
-name = "emq-loadtest"
+name = "emq-latency"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
+[[bin]]
+name = "emq-latency"
+path = "latency.rs"
+
 [dependencies]
-# Local path until pop_into APIs are published.
 emq = { path = "../../../bindings/rust/emq" }

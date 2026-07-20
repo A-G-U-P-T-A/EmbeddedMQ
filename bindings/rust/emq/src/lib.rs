@@ -1,10 +1,11 @@
 //! Safe Rust bindings for EmbeddedMQ.
 
 use emq_sys::{
-    emq_message, emq_message_release, emq_pop, emq_push, emq_queue_close, emq_queue_create,
-    emq_queue_opts, emq_queue_opts_default, emq_queue_stats, emq_runtime_create,
-    emq_runtime_destroy, emq_stats, emq_status_string, EMQ_ERR_EMPTY, EMQ_ERR_INVALID, EMQ_OK,
-    EMQ_MSG_FLAG_BORROWED, EMQ_MSG_FLAG_CLAIMED,
+    emq_claim, emq_message, emq_message_release, emq_pop, emq_pop_into, emq_pop_into_n, emq_push,
+    emq_push_n, emq_queue_close, emq_queue_create, emq_queue_opts, emq_queue_opts_default,
+    emq_queue_stats, emq_release_claim, emq_runtime_create, emq_runtime_destroy, emq_stats,
+    emq_status_string, EMQ_ERR_EMPTY, EMQ_ERR_INVALID, EMQ_MSG_FLAG_BORROWED, EMQ_MSG_FLAG_CLAIMED,
+    EMQ_OK,
 };
 use std::ffi::{CStr, CString};
 use std::cell::Cell;
@@ -153,6 +154,28 @@ impl<'rt> SpscQueue<'rt> {
         self.inner.pop(timeout)
     }
 
+    pub fn pop_into(&self, dst: &mut [u8], timeout: Option<Duration>) -> Result<usize> {
+        self.inner.pop_into(dst, timeout)
+    }
+
+    pub fn push_n(&self, data: &[u8], count: usize) -> Result<usize> {
+        self.inner.push_n(data, count)
+    }
+
+    pub fn pop_into_n(
+        &self,
+        dst: &mut [u8],
+        msg_cap: usize,
+        max_count: usize,
+        timeout: Option<Duration>,
+    ) -> Result<usize> {
+        self.inner.pop_into_n(dst, msg_cap, max_count, timeout)
+    }
+
+    pub fn claim(&self, timeout: Option<Duration>) -> Result<Claim> {
+        self.inner.claim(timeout)
+    }
+
     pub fn try_pop(&self) -> Result<Option<Message>> {
         self.inner.try_pop()
     }
@@ -187,6 +210,84 @@ impl<'rt> Queue<'rt> {
         Ok(Message { inner: msg })
     }
 
+    /// Hot path: copy into `dst` with no engine malloc. Returns byte length.
+    pub fn pop_into(&self, dst: &mut [u8], timeout: Option<Duration>) -> Result<usize> {
+        let mut n = 0usize;
+        let ms = timeout.map(|d| d.as_millis() as u32).unwrap_or(0);
+        let status = unsafe {
+            emq_pop_into(
+                self.raw,
+                dst.as_mut_ptr() as *mut _,
+                dst.len(),
+                &mut n,
+                ptr::null_mut(),
+                ms,
+            )
+        };
+        match status {
+            EMQ_OK => Ok(n),
+            EMQ_ERR_INVALID => Err(Error { code: EMQ_ERR_INVALID }),
+            other => Err(Error { code: other }),
+        }
+    }
+
+    /// Push the same payload `count` times (amortize FFI).
+    pub fn push_n(&self, data: &[u8], count: usize) -> Result<usize> {
+        let mut pushed = 0usize;
+        check(unsafe {
+            emq_push_n(
+                self.raw,
+                data.as_ptr() as *const _,
+                data.len(),
+                count,
+                &mut pushed,
+            )
+        })?;
+        Ok(pushed)
+    }
+
+    /// Batch pop into a stride buffer (`dst.len() >= msg_cap * max_count`).
+    pub fn pop_into_n(
+        &self,
+        dst: &mut [u8],
+        msg_cap: usize,
+        max_count: usize,
+        timeout: Option<Duration>,
+    ) -> Result<usize> {
+        if msg_cap == 0 || dst.len() < msg_cap.saturating_mul(max_count) {
+            return Err(Error { code: EMQ_ERR_INVALID });
+        }
+        let mut count = 0usize;
+        let ms = timeout.map(|d| d.as_millis() as u32).unwrap_or(0);
+        let status = unsafe {
+            emq_pop_into_n(
+                self.raw,
+                dst.as_mut_ptr() as *mut _,
+                msg_cap,
+                max_count,
+                &mut count,
+                ptr::null_mut(),
+                ms,
+            )
+        };
+        match status {
+            EMQ_OK => Ok(count),
+            EMQ_ERR_EMPTY if count == 0 => Ok(0),
+            other => Err(Error { code: other }),
+        }
+    }
+
+    /// Zero-copy claim into the ring; must call [`Claim::release`].
+    pub fn claim(&self, timeout: Option<Duration>) -> Result<Claim> {
+        let mut msg = emq_message::default();
+        let ms = timeout.map(|d| d.as_millis() as u32).unwrap_or(0);
+        check(unsafe { emq_claim(self.raw, &mut msg, ms) })?;
+        Ok(Claim {
+            queue: self.raw,
+            inner: msg,
+        })
+    }
+
     pub fn try_pop(&self) -> Result<Option<Message>> {
         let mut msg = emq_message::default();
         let status = unsafe { emq_sys::emq_try_pop(self.raw, &mut msg) };
@@ -205,6 +306,37 @@ impl<'rt> Queue<'rt> {
 
     pub fn close(self) -> Result<()> {
         check(unsafe { emq_queue_close(self.raw) })
+    }
+}
+
+/// Zero-copy claim; payload is valid until [`Claim::release`] or drop.
+pub struct Claim {
+    queue: *mut emq_sys::emq_queue,
+    inner: emq_message,
+}
+
+impl Claim {
+    pub fn as_bytes(&self) -> &[u8] {
+        if self.inner.data.is_null() || self.inner.size == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.inner.data as *const u8, self.inner.size) }
+    }
+
+    pub fn release(mut self) -> Result<()> {
+        check(unsafe { emq_release_claim(self.queue, &mut self.inner) })?;
+        self.inner.data = ptr::null();
+        Ok(())
+    }
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        if !self.inner.data.is_null() {
+            unsafe {
+                let _ = emq_release_claim(self.queue, &mut self.inner);
+            }
+        }
     }
 }
 

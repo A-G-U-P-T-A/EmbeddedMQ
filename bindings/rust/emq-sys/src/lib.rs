@@ -114,6 +114,30 @@ extern "C" {
         timeout_ms: u32,
     ) -> emq_status;
     pub fn emq_try_pop(q: *mut emq_queue, out: *mut emq_message) -> emq_status;
+    pub fn emq_pop_into(
+        q: *mut emq_queue,
+        dst: *mut c_void,
+        dst_cap: usize,
+        out_size: *mut usize,
+        meta_opt: *mut emq_message,
+        timeout_ms: u32,
+    ) -> emq_status;
+    pub fn emq_push_n(
+        q: *mut emq_queue,
+        data: *const c_void,
+        size: usize,
+        count: usize,
+        pushed: *mut usize,
+    ) -> emq_status;
+    pub fn emq_pop_into_n(
+        q: *mut emq_queue,
+        dst: *mut c_void,
+        msg_cap: usize,
+        max_count: usize,
+        out_count: *mut usize,
+        out_sizes_opt: *mut usize,
+        timeout_ms: u32,
+    ) -> emq_status;
     pub fn emq_claim(
         q: *mut emq_queue,
         out: *mut emq_message,

@@ -134,7 +134,35 @@ cc -Icore/include your_app.c -Lbuild -lemq -lpthread -o your_app   # Linux/macOS
 
 Public API: [`core/include/emq/emq.h`](core/include/emq/emq.h) · types: [`core/include/emq/emq_types.h`](core/include/emq/emq_types.h).
 
-**Ownership rule:** successful `emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer `message.data` to you. Always call `emq_message_release(&m)`. Zero-copy FAST path: `emq_claim` / `emq_release_claim`.
+**Ownership rule:** successful `emq_pop` / `emq_try_pop` / `emq_pop_batch` / `emq_sub_next` transfer `message.data` to you. Always call `emq_message_release(&m)`. Prefer caller-buffer `emq_pop_into` / `emq_pop_into_n` on hot paths (no engine malloc). Zero-copy FAST path: `emq_claim` / `emq_release_claim`.
+
+---
+
+## Performance (beta)
+
+Cross-client numbers from [`examples/loadtest/`](examples/loadtest/) on Docker Linux (Windows host). Prefer **batch** APIs for Go/Python/Java throughput; Rust tracks C closely.
+
+### Throughput — 100k × 64 B, SPSC FAST FIFO (median ops/s)
+
+| Client | Scalar `pop_into` | Batch 32 |
+|--------|------------------:|---------:|
+| C | 18.8M | 24.0M |
+| Rust | 15.7M (83% of C) | 22.4M (94%) |
+| Python | 5.7M (30%) | 18.1M (76%) |
+| Go | 4.1M (22%) | 15.6M (65%) |
+| Java | 7.6M (40%) | 12.3M (52%) |
+
+### Latency — push + `pop_into` pair (p50 ns)
+
+| Payload | Messages | C | Rust | Python | Go |
+| ------- | -------- | -: | ---: | -----: | -: |
+| 64 B | 10M | 55 | 61 | 176 | 240 |
+| 256 B | 10M | 57 | 69 | 175 | 237 |
+| 1 KB | 10M | 71 | 84 | 199 | 256 |
+| 4 KB | 5M | 143 | 156 | 279 | 328 |
+| 16 KB | 1M | 506 | 511 | 716 | 726 |
+
+Full percentiles (p99 / p99.9 / p99.99): [`examples/loadtest/latency/results.md`](examples/loadtest/latency/results.md). Scoreboard notes: [`examples/loadtest/results.md`](examples/loadtest/results.md).
 
 ---
 
@@ -171,7 +199,16 @@ More detail: [docs/getting-started.md](docs/getting-started.md).
 
 ## Bindings
 
-Language clients live under [`bindings/`](bindings/). See each subdirectory for build instructions. The stable C ABI is the contract every binding uses.
+Language clients live under [`bindings/`](bindings/). Each client **vendors/compiles** the C engine (SQLite-style) — no separate `libemq` install for the default path. Stable contract: [`core/include/emq/emq.h`](core/include/emq/emq.h).
+
+| Language | Package | Install |
+| -------- | ------- | ------- |
+| Python | [`embeddedmq`](https://pypi.org/project/embeddedmq/) | `pip install embeddedmq` |
+| Rust | [`emq`](https://crates.io/crates/emq) | `cargo add emq` |
+| Go | [`…/bindings/go`](https://pkg.go.dev/github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go) | `go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta.3` |
+| Java | [`io.github.a-g-u-p-t-a:embeddedmq`](https://central.sonatype.com/) | Maven Central `1.0.0-beta.4` (JDK 22+) |
+
+Hot-path APIs: `pop_into` / `PopCopy` / `pop_copy`, plus batch `push_n` / `pop_into_n`. Prefer those over owning `Message` + copy helpers.
 
 ---
 
@@ -180,10 +217,9 @@ Language clients live under [`bindings/`](bindings/). See each subdirectory for 
 See [CHANGELOG.md](CHANGELOG.md), [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md),
 and [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
-Clients under [`bindings/`](bindings/) bundle the C engine. Tag `v*` runs
-`Release bindings` → GitHub Release assets, and publishes to **PyPI / Maven
-Central / crates.io** when those secrets are configured. Go uses a nested tag
-`bindings/go/v…` for the module proxy.
+Tag `v*` runs `Release bindings` → GitHub Release assets and publishes to
+**PyPI / Maven Central / crates.io** when secrets are configured. Go uses a
+nested tag `bindings/go/v…` for the module proxy.
 
 ## Website
 
@@ -216,3 +252,15 @@ python -m http.server -d site 8080
 ## Status
 
 Active C runtime with CI on Windows / Linux / macOS (MSVC, GCC, Clang), plus ASan/UBSan and TSan jobs. Monorepo layout hosts the engine in `core/` with bindings, transport, and the GitHub Pages site alongside.
+
+---
+
+## License
+
+Copyright 2026 A-G-U-P-T-A and contributors.
+
+Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+```text
+http://www.apache.org/licenses/LICENSE-2.0
+```

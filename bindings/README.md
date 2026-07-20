@@ -1,6 +1,6 @@
 # Language bindings
 
-**Version:** `1.0.0-beta` · Contract: C ABI in `core/include/emq/emq.h`
+**Version:** `1.0.7-beta` · License: **Apache-2.0** · Contract: C ABI in `core/include/emq/emq.h`
 
 Bindings follow the usual packaging patterns for each ecosystem
 ([go-sqlite3](https://github.com/mattn/go-sqlite3), [rusqlite](https://github.com/rusqlite/rusqlite),

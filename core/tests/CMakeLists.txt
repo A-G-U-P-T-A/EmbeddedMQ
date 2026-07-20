@@ -38,6 +38,7 @@ emq_add_test(test_abi test_abi.c)
 emq_add_test(test_compat test_compat.c)
 emq_add_test(test_boundary_matrix test_boundary_matrix.c)
 emq_add_test(test_claim test_claim.c)
+emq_add_test(test_pop_into test_pop_into.c)
 target_link_libraries(test_compat PRIVATE emq_testsupport)
 target_include_directories(test_compat PRIVATE ${EMQ_CORE_DIR}/testsupport)
 

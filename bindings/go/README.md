@@ -27,8 +27,10 @@ go build ./...
 From another module (replace until a tagged release is consumed via the proxy):
 
 ```bash
-go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta
+go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta.3
 ```
+
+Licensed under Apache-2.0 (see repo root `LICENSE`).
 
 ## Usage
 
@@ -53,17 +55,25 @@ func main() {
 	}
 	defer q.Close()
 
-	_ = q.Push([]byte("hello"))
-	msg, err := q.Pop(0)
+	payload := []byte("hello")
+	_ = q.Push(payload)
+
+	// Hot path: emq_pop_into (no engine malloc), one cgo call
+	dst := make([]byte, len(payload))
+	n, err := q.PopCopy(dst, 0)
 	if err != nil {
 		panic(err)
 	}
-	defer msg.Release()
-	fmt.Println(string(msg.Bytes()))
+	fmt.Println(string(dst[:n]))
+
+	// Throughput: emq_push_n + emq_pop_into_n
+	// _ = q.PushRepeat(payload, 32)
+	// got, _ := q.PopCopyN(batchDst, len(payload), 32)
 }
 ```
 
-Always call `Message.Release()` after a successful pop (ownership matches `emq_message_release`).
+Prefer `PopCopy` / `PushRepeat`+`PopCopyN`. `Pop` + `Message.Data()` allocates —
+convenience only. Always `Message.Release()` after `Pop`.
 
 ## Optional: link a prebuilt libemq
 

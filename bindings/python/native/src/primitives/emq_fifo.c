@@ -134,6 +134,30 @@ int emq_fifo_push(emq_queue_desc *q, const void *data, size_t size,
   return rc;
 }
 
+static int emq_fifo_pop_into_lfq(emq_queue_desc *q, void *dst, uint32_t dst_cap,
+                                 uint32_t *out_len, uint64_t *out_id,
+                                 uint32_t *out_flags, uint32_t *out_prio) {
+  uint32_t len = 0;
+  uint64_t msg_id = 0;
+  uint32_t flags = 0;
+  uint32_t prio = 0;
+  int rc;
+
+  rc = emq_lfq_peek_len(q->lfq, &len);
+  if (rc != 0) return rc;
+  if (len > dst_cap) return -1; /* leave message queued */
+  rc = emq_lfq_try_pop(q->lfq, dst, dst_cap, &len, &msg_id, &flags, &prio);
+  if (rc != 0) return rc;
+
+  if (out_len) *out_len = len;
+  if (out_id) *out_id = msg_id;
+  if (out_flags) *out_flags = flags;
+  if (out_prio) *out_prio = prio;
+  q->stats.dequeued++;
+  q->stats.depth = emq_atomic_fetch_add_u64(&q->hot.depth, (uint64_t)-1) - 1;
+  return 0;
+}
+
 static int emq_fifo_pop_lfq(emq_queue_desc *q, emq_message *out) {
   uint32_t len = 0;
   uint64_t msg_id = 0;
@@ -146,7 +170,7 @@ static int emq_fifo_pop_lfq(emq_queue_desc *q, emq_message *out) {
    * buffer: one allocation, one memcpy per pop. */
   rc = emq_lfq_peek_len(q->lfq, &len);
   if (rc != 0) return rc;
-  /* Pop copies always use malloc so emq_message_release() can free them. */
+  /* Owning pop: malloc so emq_message_release() can free. Prefer pop_into. */
   payload = (uint8_t *)emq_malloc(len ? len : 1);
   if (!payload) return -2;
   rc = emq_lfq_try_pop(q->lfq, payload, len, &len, &msg_id, &flags, &prio);
@@ -164,6 +188,40 @@ static int emq_fifo_pop_lfq(emq_queue_desc *q, emq_message *out) {
   out->size = len;
   q->stats.dequeued++;
   q->stats.depth = emq_atomic_fetch_add_u64(&q->hot.depth, (uint64_t)-1) - 1;
+  return 0;
+}
+
+int emq_fifo_pop_into(emq_queue_desc *q, void *dst, uint32_t dst_cap,
+                      uint32_t *out_len, uint64_t *out_id, uint32_t *out_flags,
+                      uint32_t *out_prio) {
+  emq_message owned;
+  int rc;
+  if (!q || q->closed) return -9;
+  if (!dst && dst_cap != 0) return -1;
+
+  if (q->lfq) {
+    rc = emq_fifo_pop_into_lfq(q, dst, dst_cap, out_len, out_id, out_flags,
+                               out_prio);
+    if (rc != -5) return rc;
+    /* Fall through to log for TTL / spill path messages. */
+  }
+
+  memset(&owned, 0, sizeof(owned));
+  rc = emq_fifo_pop(q, &owned);
+  if (rc != 0) return rc;
+  if (owned.size > dst_cap) {
+    /* Durable/log fallback: message already consumed — drop and fail. */
+    if (owned.data) free((void *)owned.data);
+    return -1;
+  }
+  if (owned.data && owned.size > 0 && dst) {
+    memcpy(dst, owned.data, owned.size);
+  }
+  if (out_len) *out_len = (uint32_t)owned.size;
+  if (out_id) *out_id = owned.id;
+  if (out_flags) *out_flags = owned.flags;
+  if (out_prio) *out_prio = owned.priority;
+  if (owned.data) free((void *)owned.data);
   return 0;
 }
 

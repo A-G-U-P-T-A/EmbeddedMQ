@@ -57,17 +57,12 @@ bash run-loadtest.sh # full 100k bottleneck breakdown
 
 JVM flag required: `--enable-native-access=ALL-UNNAMED`.
 
-## Why Central `1.0.0-beta.3` looked ~30× slow
+## Hot path (`1.0.0-beta.4`)
 
-The published client used `MethodHandle.invokeWithArguments`, allocated a new
-arena segment per push/pop, and always copied via `Message.data()`. That was
-**client overhead**, not the C engine. Local `1.0.0-beta.4-SNAPSHOT` fixes:
+Prefer `pushNative` / `popCopy` / `pushRepeat` / `popCopyN` over allocating
+`Message` + `data()`. Older Central builds used slower FFM call/copy patterns.
 
-- `invokeExact` + `Linker.Option.critical`
-- reused push/pop scratch buffers
-- `pushNative` / `popCopy` fast path
-
-Do **not** publish another Central version until `run-loadtest.sh` numbers look right.
+Licensed under Apache-2.0 (see repo root `LICENSE`).
 
 ## Dependency
 
@@ -75,6 +70,6 @@ Do **not** publish another Central version until `run-loadtest.sh` numbers look 
 <dependency>
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <version>1.0.0-beta.4-SNAPSHOT</version> <!-- local install until published -->
+  <version>1.0.0-beta.4</version>
 </dependency>
 ```

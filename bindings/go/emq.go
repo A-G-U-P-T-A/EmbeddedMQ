@@ -9,11 +9,11 @@
 package emq
 
 /*
-#cgo !emq_system CFLAGS: -I${SRCDIR}/../native/include -I${SRCDIR}/../native/src -std=c11
+#cgo !emq_system CFLAGS: -I${SRCDIR}/../native/include -I${SRCDIR}/../native/src -std=c11 -O2
 #cgo !emq_system,windows CFLAGS: -DEMQ_PLATFORM_WINDOWS -D_CRT_SECURE_NO_WARNINGS
 #cgo !emq_system,linux CFLAGS: -D_GNU_SOURCE -DEMQ_PLATFORM_POSIX
 #cgo !emq_system,darwin CFLAGS: -D_DARWIN_C_SOURCE -DEMQ_PLATFORM_POSIX
-#cgo emq_system CFLAGS: -DEMQ_SYSTEM_LIB=1 -I${EMQ_INCLUDE}
+#cgo emq_system CFLAGS: -DEMQ_SYSTEM_LIB=1 -I${EMQ_INCLUDE} -O2
 #cgo emq_system LDFLAGS: -L${EMQ_LIB} -lemq
 #cgo windows LDFLAGS: -lSynchronization
 #cgo !windows LDFLAGS: -lpthread
@@ -32,17 +32,17 @@ import (
 
 // Status codes from emq_status.
 const (
-	OK           = int(C.EMQ_OK)
-	ErrInvalid   = int(C.EMQ_ERR_INVALID)
-	ErrNoMem     = int(C.EMQ_ERR_NOMEM)
-	ErrNotFound  = int(C.EMQ_ERR_NOT_FOUND)
-	ErrFull      = int(C.EMQ_ERR_FULL)
-	ErrEmpty     = int(C.EMQ_ERR_EMPTY)
-	ErrIO        = int(C.EMQ_ERR_IO)
-	ErrTimeout   = int(C.EMQ_ERR_TIMEOUT)
-	ErrExists    = int(C.EMQ_ERR_EXISTS)
-	ErrClosed    = int(C.EMQ_ERR_CLOSED)
-	ErrBusy      = int(C.EMQ_ERR_BUSY)
+	OK             = int(C.EMQ_OK)
+	ErrInvalid     = int(C.EMQ_ERR_INVALID)
+	ErrNoMem       = int(C.EMQ_ERR_NOMEM)
+	ErrNotFound    = int(C.EMQ_ERR_NOT_FOUND)
+	ErrFull        = int(C.EMQ_ERR_FULL)
+	ErrEmpty       = int(C.EMQ_ERR_EMPTY)
+	ErrIO          = int(C.EMQ_ERR_IO)
+	ErrTimeout     = int(C.EMQ_ERR_TIMEOUT)
+	ErrExists      = int(C.EMQ_ERR_EXISTS)
+	ErrClosed      = int(C.EMQ_ERR_CLOSED)
+	ErrBusy        = int(C.EMQ_ERR_BUSY)
 	ErrUnsupported = int(C.EMQ_ERR_UNSUPPORTED)
 )
 
@@ -129,7 +129,8 @@ type Queue struct {
 	q  *C.emq_queue
 }
 
-// Push enqueues a byte slice.
+// Push enqueues a byte slice (zero-copy into C for the duration of the call;
+// the engine copies into the queue).
 func (q *Queue) Push(data []byte) error {
 	if q.q == nil {
 		return errors.New("queue closed")
@@ -138,7 +139,9 @@ func (q *Queue) Push(data []byte) error {
 	if len(data) > 0 {
 		ptr = unsafe.Pointer(&data[0])
 	}
-	return check(C.emq_push(q.q, ptr, C.size_t(len(data)), nil))
+	st := C.emq_push(q.q, ptr, C.size_t(len(data)), nil)
+	runtime.KeepAlive(data)
+	return check(st)
 }
 
 // Message holds an owned emq_message; call Release when done.
@@ -146,14 +149,20 @@ type Message struct {
 	msg C.emq_message
 }
 
-// Data returns a copy of the payload.
+// Data returns a single owned copy of the payload.
 func (m *Message) Data() []byte {
 	if m.msg.data == nil || m.msg.size == 0 {
 		return nil
 	}
-	out := make([]byte, int(m.msg.size))
-	copy(out, C.GoBytes(m.msg.data, C.int(m.msg.size)))
-	return out
+	return C.GoBytes(m.msg.data, C.int(m.msg.size))
+}
+
+// Bytes is a zero-copy view of the payload. Valid only until Release.
+func (m *Message) Bytes() []byte {
+	if m.msg.data == nil || m.msg.size == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(m.msg.data), int(m.msg.size))
 }
 
 // ID returns the message identifier.
@@ -165,10 +174,13 @@ func (m *Message) ID() uint64 {
 func (m *Message) Release() {
 	if m.msg.data != nil {
 		C.emq_message_release(&m.msg)
+		m.msg.data = nil
+		m.msg.size = 0
 	}
 }
 
 // Pop waits up to timeoutMs for a message (0 = non-blocking).
+// Prefer PopCopy on hot paths to avoid heap-allocating Message.
 func (q *Queue) Pop(timeoutMs uint32) (*Message, error) {
 	if q.q == nil {
 		return nil, errors.New("queue closed")
@@ -178,6 +190,67 @@ func (q *Queue) Pop(timeoutMs uint32) (*Message, error) {
 		return nil, err
 	}
 	return &Message{msg: msg}, nil
+}
+
+// PopCopy pops into dst via emq_pop_into (no malloc), returns byte length.
+func (q *Queue) PopCopy(dst []byte, timeoutMs uint32) (int, error) {
+	if q.q == nil {
+		return 0, errors.New("queue closed")
+	}
+	var n C.size_t
+	var ptr unsafe.Pointer
+	if len(dst) > 0 {
+		ptr = unsafe.Pointer(&dst[0])
+	}
+	st := C.emq_pop_into(q.q, ptr, C.size_t(len(dst)), &n, nil, C.uint32_t(timeoutMs))
+	runtime.KeepAlive(dst)
+	if st == C.EMQ_ERR_INVALID && len(dst) > 0 {
+		return 0, fmt.Errorf("dst too small for message")
+	}
+	if err := check(st); err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// PushRepeat pushes the same payload n times via emq_push_n (one cgo call).
+func (q *Queue) PushRepeat(data []byte, n int) error {
+	if q.q == nil {
+		return errors.New("queue closed")
+	}
+	if n <= 0 {
+		return nil
+	}
+	var ptr unsafe.Pointer
+	if len(data) > 0 {
+		ptr = unsafe.Pointer(&data[0])
+	}
+	var pushed C.size_t
+	st := C.emq_push_n(q.q, ptr, C.size_t(len(data)), C.size_t(n), &pushed)
+	runtime.KeepAlive(data)
+	return check(st)
+}
+
+// PopCopyN pops up to max messages into dst via emq_pop_into_n.
+// dst layout is max contiguous slots of msgCap bytes (len(dst) >= max*msgCap).
+func (q *Queue) PopCopyN(dst []byte, msgCap int, max int) (int, error) {
+	if q.q == nil {
+		return 0, errors.New("queue closed")
+	}
+	if max <= 0 {
+		return 0, nil
+	}
+	if msgCap <= 0 || len(dst) < msgCap*max {
+		return 0, fmt.Errorf("dst too small: need %d have %d", msgCap*max, len(dst))
+	}
+	var n C.size_t
+	st := C.emq_pop_into_n(q.q, unsafe.Pointer(&dst[0]), C.size_t(msgCap),
+		C.size_t(max), &n, nil, 0)
+	runtime.KeepAlive(dst)
+	if err := check(st); err != nil {
+		return int(n), err
+	}
+	return int(n), nil
 }
 
 // Close closes the queue handle.

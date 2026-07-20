@@ -34,6 +34,34 @@ EMQ_API emq_status emq_push(emq_queue *q, const void *data, size_t size,
 EMQ_API emq_status emq_pop(emq_queue *q, emq_message *out, uint32_t timeout_ms);
 EMQ_API emq_status emq_try_pop(emq_queue *q, emq_message *out);
 EMQ_API emq_status emq_peek(emq_queue *q, emq_message *out);
+
+/*
+ * Hot-path consume: copy payload into caller buffer (no malloc/free).
+ * meta_opt may be NULL; when non-NULL, id/priority/flags/size are filled and
+ * meta_opt->data is left NULL (caller owns dst). Returns EMQ_ERR_INVALID if
+ * the message does not fit in dst_cap (message remains queued).
+ */
+EMQ_API emq_status emq_pop_into(emq_queue *q, void *dst, size_t dst_cap,
+                                size_t *out_size, emq_message *meta_opt,
+                                uint32_t timeout_ms);
+
+/*
+ * Push the same payload `count` times in one call (amortize FFI).
+ * *pushed is set to the number successfully enqueued.
+ */
+EMQ_API emq_status emq_push_n(emq_queue *q, const void *data, size_t size,
+                              size_t count, size_t *pushed);
+
+/*
+ * Batch try-pop into a stride buffer: max_count slots of msg_cap bytes each.
+ * First wait uses timeout_ms; subsequent pops are non-blocking.
+ * out_sizes_opt may be NULL; when non-NULL it must hold max_count size_t.
+ * *out_count is messages copied. Returns EMQ_OK if out_count > 0.
+ */
+EMQ_API emq_status emq_pop_into_n(emq_queue *q, void *dst, size_t msg_cap,
+                                  size_t max_count, size_t *out_count,
+                                  size_t *out_sizes_opt, uint32_t timeout_ms);
+
 EMQ_API emq_status emq_ack(emq_queue *q, uint64_t message_id);
 EMQ_API emq_status emq_nack(emq_queue *q, uint64_t message_id,
                             uint32_t delay_ms);

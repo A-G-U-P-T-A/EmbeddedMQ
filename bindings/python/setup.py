@@ -67,7 +67,7 @@ ext = Extension(
 
 setup(
     name="embeddedmq",
-    version="1.0.0b1",
+    version="1.0.0b2",
     package_dir={"": "src"},
     packages=["embeddedmq"],
     ext_modules=[ext],

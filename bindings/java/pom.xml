@@ -11,8 +11,7 @@
   -->
   <groupId>io.github.a-g-u-p-t-a</groupId>
   <artifactId>embeddedmq</artifactId>
-  <!-- Local/dev; bump + publish only after load numbers are accepted. -->
-  <version>1.0.0-beta.4-SNAPSHOT</version>
+  <version>1.0.0-beta.4</version>
   <packaging>jar</packaging>
 
   <name>EmbeddedMQ</name>
@@ -21,8 +20,9 @@
 
   <licenses>
     <license>
-      <name>MIT License</name>
-      <url>https://opensource.org/licenses/MIT</url>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+      <distribution>repo</distribution>
     </license>
   </licenses>
 

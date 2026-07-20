@@ -14,14 +14,14 @@ dependencies = [
 
 [[package]]
 name = "emq"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "emq-sys",
 ]
 
 [[package]]
 name = "emq-sys"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "cc",
 ]

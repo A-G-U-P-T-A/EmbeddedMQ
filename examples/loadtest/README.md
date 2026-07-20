@@ -1,26 +1,40 @@
 # Cross-client queue load test
 
-Same workload for Java / Python / Go / Rust against the published packages:
+Apples-to-apples bulk push-all / pop-all against the **local** engine + bindings
+(after `scripts/sync_native.py`).
 
-1. create runtime + queue (capacity ≥ message count)
-2. push `N` fixed-size payloads
-3. pop `N` messages and release them
-4. report ops/sec for push, pop, and round-trip
+## Modes
 
-Defaults: `N=100000`, payload `64` bytes.
+| Mode | Meaning |
+|------|---------|
+| `scalar_pop_into` | Per-message `push` + caller-buffer pop (hot path) |
+| `batch_pop_into_n` | `push_n` / `push_repeat` + batch pop (throughput) |
+| `scalar_claim` | C only — zero-copy claim baseline |
+| `legacy_pop` | C only — owning malloc pop (avoid in bindings) |
 
-```powershell
-# from repo root (Windows + Docker)
-.\examples\loadtest\run-all.ps1
-```
+## Env
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `EMQ_LOAD_N` | 100000 | messages |
+| `EMQ_LOAD_PAYLOAD` | 64 | bytes |
+| `EMQ_LOAD_BATCH` | 32 | batch size |
+| `EMQ_LOAD_TRIALS` | 5 | medians |
+| `EMQ_LOAD_WARMUP` | 20000 | warmup ops |
+
+## Run
 
 ```bash
-# Linux/macOS + Docker
-bash examples/loadtest/run-all.sh
+# C baseline (Docker)
+bash examples/loadtest/c/run-docker.sh
+
+# Full matrix — see run-all.sh / run-all.ps1 (use local bindings, not PyPI)
 ```
 
-Env overrides: `EMQ_LOAD_N`, `EMQ_LOAD_PAYLOAD`.
+Record medians in [results.md](results.md). Latency percentiles:
+[latency/results.md](latency/results.md). Gates: [RELEASE_GATES.md](RELEASE_GATES.md).
 
-**Note:** Go is load-tested via monorepo `replace` because the published
-`bindings/go` module still expects sibling `bindings/native` headers (not
-inside the module zip). Python / Rust / Java use the public registries.
+```bash
+# Latency matrix (C → Go → Rust → Python)
+bash examples/loadtest/latency/run-matrix.sh
+```
