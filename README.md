@@ -181,6 +181,8 @@ The project site is a static page in [`site/`](site/), deployed by [`.github/wor
 
 **https://a-g-u-p-t-a.github.io/EmbeddedMQ/**
 
+One-time setup (required — Actions cannot create the Pages site): **Settings → Pages → Build and deployment → Source: GitHub Actions**. Same constraint as [wireshark-mcp](https://github.com/A-G-U-P-T-A/wireshark-mcp).
+
 Preview locally by opening `site/index.html` or serving the folder:
 
 ```bash

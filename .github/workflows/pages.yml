@@ -1,3 +1,7 @@
+# Publish site/ as GitHub Pages.
+# Requires once: Settings → Pages → Source = "GitHub Actions"
+# GITHUB_TOKEN cannot create the Pages site (Resource not accessible by integration).
+
 name: Pages
 
 on:
@@ -18,26 +22,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        # Repo Pages must already be enabled with Source = GitHub Actions
+        # (same constraint as wireshark-mcp — enablement: true is denied).
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
   deploy:
-    name: Deploy GitHub Pages
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-        with:
-          # Auto-enable Pages (GitHub Actions source) on first deploy.
-          enablement: true
-
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
