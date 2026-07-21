@@ -199,14 +199,37 @@ More detail: [docs/getting-started.md](docs/getting-started.md).
 
 ## Bindings
 
-Language clients live under [`bindings/`](bindings/). Each client **vendors/compiles** the C engine (SQLite-style) — no separate `libemq` install for the default path. Stable contract: [`core/include/emq/emq.h`](core/include/emq/emq.h).
+Published clients ship from the usual language registries. Source lives under
+[`bindings/`](bindings/); each client **vendors/compiles** the C engine
+(SQLite-style) — no separate `libemq` install for the default path.
+Stable contract: [`core/include/emq/emq.h`](core/include/emq/emq.h).
 
-| Language | Package | Install |
-| -------- | ------- | ------- |
-| Python | [`embeddedmq`](https://pypi.org/project/embeddedmq/) | `pip install embeddedmq` |
-| Rust | [`emq`](https://crates.io/crates/emq) | `cargo add emq` |
-| Go | [`…/bindings/go`](https://pkg.go.dev/github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go) | `go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta.3` |
-| Java | [`io.github.a-g-u-p-t-a:embeddedmq`](https://central.sonatype.com/) | Maven Central `1.0.0-beta.4` (JDK 22+) |
+| Language | Registry | Package | Install |
+| -------- | -------- | ------- | ------- |
+| Python | [PyPI](https://pypi.org/project/embeddedmq/) | `embeddedmq` | `pip install embeddedmq` |
+| Rust | [crates.io](https://crates.io/crates/emq) | `emq` (+ [`emq-sys`](https://crates.io/crates/emq-sys)) | `cargo add emq` |
+| Go | [pkg.go.dev](https://pkg.go.dev/github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go) | `…/bindings/go` | `go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta.3` |
+| Java | [Maven Central](https://central.sonatype.com/artifact/io.github.a-g-u-p-t-a/embeddedmq) | `io.github.a-g-u-p-t-a:embeddedmq` | see snippet below (JDK 22+) |
+
+```bash
+# Python — https://pypi.org/project/embeddedmq/
+pip install embeddedmq
+
+# Rust — https://crates.io/crates/emq
+cargo add emq
+
+# Go — https://pkg.go.dev/github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go
+go get github.com/A-G-U-P-T-A/EmbeddedMQ/bindings/go@v1.0.0-beta.3
+```
+
+```xml
+<!-- Java — Maven Central: io.github.a-g-u-p-t-a:embeddedmq -->
+<dependency>
+  <groupId>io.github.a-g-u-p-t-a</groupId>
+  <artifactId>embeddedmq</artifactId>
+  <version>1.0.0-beta.4</version>
+</dependency>
+```
 
 Hot-path APIs: `pop_into` / `PopCopy` / `pop_copy`, plus batch `push_n` / `pop_into_n`. Prefer those over owning `Message` + copy helpers.
 
